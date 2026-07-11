@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import WalletConverter from '@/components/WalletConverter';
 import headerImage from '@/assets/lana-header.png';
 import { Button } from '@/components/ui/button';
-import { Wallet } from 'lucide-react';
+import { Wallet, Printer } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 const Index = () => {
@@ -19,16 +19,31 @@ const Index = () => {
         />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background/80" />
         
-        {/* Create New Wallet Button - Top Right */}
-        <div className="absolute top-6 right-6 z-10">
-          <Button 
+        {/* Top Right Buttons */}
+        <div className="absolute top-6 right-6 z-10 flex gap-2">
+          <Button
             variant="hero"
             size="lg"
             asChild
           >
-            <a 
-              href="https://www.offlinelana.org" 
-              target="_blank" 
+            <a
+              href="https://print.lanapaper.online"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="gap-2"
+            >
+              <Printer className="h-5 w-5" />
+              Bulk Print
+            </a>
+          </Button>
+          <Button
+            variant="hero"
+            size="lg"
+            asChild
+          >
+            <a
+              href="https://www.offlinelana.org"
+              target="_blank"
               rel="noopener noreferrer"
               className="gap-2"
             >
