@@ -10,6 +10,11 @@ jobs:
   # runs here too, not only on somebody's laptop.
   check:
     runs-on: ubuntu-latest
+    outputs:
+      # Vite hashes the entry bundle from its contents, so the same commit builds
+      # the same filename here and on the server. That is what lets the last step
+      # prove the public site is serving this build and not a stale one.
+      bundle: ${{ steps.built.outputs.bundle }}
     steps:
       - uses: actions/checkout@v4
 
@@ -32,24 +37,24 @@ jobs:
         run: node tools/verify-wif.mjs
 
       - name: Build
-        run: npm run build
+        id: built
+        run: |
+          set -euo pipefail
+          npm run build
+          BUNDLE="$(grep -o '/assets/index-[A-Za-z0-9_-]*\.js' dist/index.html | head -1)"
+          [ -n "$BUNDLE" ] || { echo "the build produced no hashed entry bundle"; exit 1; }
+          echo "bundle=$BUNDLE" >> "$GITHUB_OUTPUT"
 
   deploy:
     needs: check
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
-        id: remote
         uses: appleboy/ssh-action@v1
         with:
           host: 46.225.70.103
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
-          # Without this the action's `stdout` output stays EMPTY — it defaults
-          # to false. The last step of this job reads that output to learn which
-          # bundle was published, so leaving it off makes every deploy go red on
-          # that step, after the new code is already live and serving.
-          capture_stdout: true
           # `set -euo pipefail` is the only thing that stops this script early —
           # appleboy/ssh-action has no script_stop input and ignores one silently,
           # so without it every command below runs no matter what failed above.
@@ -111,56 +116,49 @@ jobs:
             PAGE="$(docker exec "$CONTAINER" wget -q -O - http://127.0.0.1/)"
             printf '%s' "$PAGE" | grep -q '<div id="root"'
 
-            # The Complete Package prints nothing without these. nginx serves a
-            # 404 for a missing file perfectly happily, and the failure would only
-            # show up in somebody's browser, mid-export.
-            for f in main wallet retail l8w cover; do
-              docker exec "$CONTAINER" test -f "/usr/share/nginx/html/ornaments/$f.png"
-            done
-            # Slovenian in a PDF needs these embedded — jsPDF's built-in faces are
-            # WinAnsi and have no 'č'.
-            for f in EBGaramond-Regular EBGaramond-SemiBold JetBrainsMono-Regular; do
-              docker exec "$CONTAINER" test -f "/usr/share/nginx/html/fonts/$f.ttf"
-            done
-            docker exec "$CONTAINER" test -f /usr/share/nginx/html/lana-mark.png
-
-            # Hand the hashed entry bundle back to the workflow, so the next step
-            # can prove the PUBLIC url is serving this build and not a stale one.
-            ASSET="$(printf '%s' "$PAGE" | grep -o '/assets/index-[A-Za-z0-9_-]*\.js' | awk 'NR==1' || true)"
-            if [ -z "$ASSET" ]; then
-              echo "no hashed entry bundle found in the served page"
+            # The Complete Package prints nothing without its engravings and fonts,
+            # and nginx serves a 404 for a missing file perfectly happily — the
+            # failure would only show up in somebody's browser, mid-export.
+            #
+            # The list is read out of the built bundle rather than kept by hand
+            # here, so it follows the code. A hand-kept list goes stale the first
+            # time an ornament is renamed, and then fails a deploy that was fine.
+            WANTED="$(docker exec "$CONTAINER" sh -c 'cat /usr/share/nginx/html/assets/*.js' \
+                      | grep -oE '/(ornaments|fonts)/[A-Za-z0-9._-]+|/lana-mark\.png' \
+                      | sort -u || true)"
+            if [ -z "$WANTED" ]; then
+              echo "the bundle asks for no ornaments or fonts at all — that cannot be right"
               exit 1
             fi
-            echo "DEPLOYED_ASSET=$ASSET"
+            for a in $WANTED; do
+              if ! docker exec "$CONTAINER" test -s "/usr/share/nginx/html$a"; then
+                echo "the bundle asks for $a and it is not in the image"
+                exit 1
+              fi
+            done
+            echo "$WANTED" | wc -l | xargs echo "assets the bundle asks for, all present:"
 
       # Everything above was measured from inside the server. This one asks the
       # internet, through the proxy and the certificate, the way a person does.
       - name: The public site is serving this build
         env:
-          REMOTE_STDOUT: ${{ steps.remote.outputs.stdout }}
+          BUNDLE: ${{ needs.check.outputs.bundle }}
         run: |
           set -euo pipefail
-          ASSET="$(printf '%s' "$REMOTE_STDOUT" \
-            | grep -o 'DEPLOYED_ASSET=/assets/index-[A-Za-z0-9_-]*\.js' \
-            | awk 'NR==1' | cut -d= -f2 || true)"
-          if [ -z "$ASSET" ]; then
-            echo "the deploy step did not report which bundle it published"
-            exit 1
-          fi
-          echo "expecting https://www.lanapaper.online to reference $ASSET"
+          echo "expecting https://www.lanapaper.online to reference $BUNDLE"
 
           # A proxy or a CDN can hold the old index.html for a few seconds.
-          for i in $(seq 1 10); do
+          for _ in $(seq 1 10); do
             HTML="$(curl -fsSL --max-time 20 https://www.lanapaper.online/ || true)"
             case "$HTML" in
-              *"$ASSET"*)
-                curl -fsS --max-time 30 -o /dev/null "https://www.lanapaper.online$ASSET"
-                echo "www.lanapaper.online is serving $ASSET"
+              *"$BUNDLE"*)
+                curl -fsS --max-time 30 -o /dev/null "https://www.lanapaper.online$BUNDLE"
+                echo "www.lanapaper.online is serving $BUNDLE"
                 exit 0
                 ;;
             esac
             sleep 6
           done
 
-          echo "www.lanapaper.online is still not referencing $ASSET"
+          echo "www.lanapaper.online is still not referencing $BUNDLE"
           exit 1
