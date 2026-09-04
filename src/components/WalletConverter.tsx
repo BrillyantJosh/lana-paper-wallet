@@ -10,7 +10,7 @@ import { convertWifToIds, isValidWifFormat, normalizePrivateKey, generateNewWall
 import { useToast } from '@/hooks/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { LanguageSelector } from '@/components/LanguageSelector';
-import QRScanner from '@/components/QRScanner';
+import QRScanner from '@/components/LazyQRScanner';
 
 const WalletConverter = () => {
   const navigate = useNavigate();

@@ -5,17 +5,162 @@ on:
     branches: [main]
 
 jobs:
+  # Nothing reaches the server until this has passed. A paper wallet whose code
+  # does not match its own ink is money nobody can get back, so the WIF corpus
+  # runs here too, not only on somebody's laptop.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24, not 20: tools/verify-wif.mjs imports src/lib/wif.ts directly so
+      # that it checks the module the app really ships. That needs
+      # module.registerHooks and TypeScript type stripping, and Node 20 has
+      # neither.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc -p tsconfig.app.json --noEmit
+
+      - name: Verify WIF decoding against an independent implementation
+        run: node tools/verify-wif.mjs
+
+      - name: Build
+        run: npm run build
+
   deploy:
+    needs: check
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
+        id: remote
         uses: appleboy/ssh-action@v1
         with:
           host: 46.225.70.103
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
+          # Without this the action's `stdout` output stays EMPTY — it defaults
+          # to false. The last step of this job reads that output to learn which
+          # bundle was published, so leaving it off makes every deploy go red on
+          # that step, after the new code is already live and serving.
+          capture_stdout: true
+          # `set -euo pipefail` is the only thing that stops this script early —
+          # appleboy/ssh-action has no script_stop input and ignores one silently,
+          # so without it every command below runs no matter what failed above.
           script: |
-            cd /opt/apps/lana-paper-wallet
-            git pull origin main
+            set -euo pipefail
+
+            APP=/opt/apps/lana-paper-wallet
+            CONTAINER=lana-paper-wallet
+            cd "$APP"
+
+            # Git refuses to touch a checkout it thinks belongs to someone else.
+            git config --global --add safe.directory "$APP"
+
+            # fetch + ff-only, never `git pull`: if somebody hand-edited a file on
+            # the server, the merge fails and the deploy stops — instead of that
+            # edit being quietly merged away and the reason for it lost with it.
+            git fetch origin
+            git merge --ff-only origin/main
+
             docker compose -f docker-compose.prod.yml build
+
+            # nginx will not admit to a broken config until it is already the live
+            # one, at which point the site is down. Test the config in the image
+            # that was just built, BEFORE anything is swapped.
+            # `awk NR==1`, not `head -n1`: head closes the pipe early, and under
+            # `pipefail` that closed pipe is itself a failed command. The `|| true`
+            # lets a compose too old for --images fall through to the name below
+            # instead of killing the deploy.
+            IMAGE="$(docker compose -f docker-compose.prod.yml config --images 2>/dev/null | awk 'NR==1' || true)"
+            if [ -z "$IMAGE" ]; then
+              # Compose's own default name for a service with no `image:` —
+              # <project>-<service>, and both are lana-paper-wallet here.
+              IMAGE=lana-paper-wallet-lana-paper-wallet
+            fi
+            # If the name is wrong, stop. A skipped config test is worse than a
+            # failed deploy.
+            docker image inspect "$IMAGE" > /dev/null
+            docker run --rm --entrypoint nginx "$IMAGE" -t
+
             docker compose -f docker-compose.prod.yml up -d
+
+            # A container reports "Up" the instant it starts, which proves only
+            # that docker did something. Ask the running container for the actual
+            # page instead.
+            served=0
+            for _ in $(seq 1 30); do
+              if docker exec "$CONTAINER" wget -q -O /dev/null http://127.0.0.1/ 2>/dev/null; then
+                served=1
+                break
+              fi
+              sleep 2
+            done
+            if [ "$served" != 1 ]; then
+              echo "the container never served / — last 50 log lines:"
+              docker logs --tail 50 "$CONTAINER" || true
+              exit 1
+            fi
+
+            PAGE="$(docker exec "$CONTAINER" wget -q -O - http://127.0.0.1/)"
+            printf '%s' "$PAGE" | grep -q '<div id="root"'
+
+            # The Complete Package prints nothing without these. nginx serves a
+            # 404 for a missing file perfectly happily, and the failure would only
+            # show up in somebody's browser, mid-export.
+            for f in main wallet retail l8w cover; do
+              docker exec "$CONTAINER" test -f "/usr/share/nginx/html/ornaments/$f.png"
+            done
+            # Slovenian in a PDF needs these embedded — jsPDF's built-in faces are
+            # WinAnsi and have no 'č'.
+            for f in EBGaramond-Regular EBGaramond-SemiBold JetBrainsMono-Regular; do
+              docker exec "$CONTAINER" test -f "/usr/share/nginx/html/fonts/$f.ttf"
+            done
+            docker exec "$CONTAINER" test -f /usr/share/nginx/html/lana-mark.png
+
+            # Hand the hashed entry bundle back to the workflow, so the next step
+            # can prove the PUBLIC url is serving this build and not a stale one.
+            ASSET="$(printf '%s' "$PAGE" | grep -o '/assets/index-[A-Za-z0-9_-]*\.js' | awk 'NR==1' || true)"
+            if [ -z "$ASSET" ]; then
+              echo "no hashed entry bundle found in the served page"
+              exit 1
+            fi
+            echo "DEPLOYED_ASSET=$ASSET"
+
+      # Everything above was measured from inside the server. This one asks the
+      # internet, through the proxy and the certificate, the way a person does.
+      - name: The public site is serving this build
+        env:
+          REMOTE_STDOUT: ${{ steps.remote.outputs.stdout }}
+        run: |
+          set -euo pipefail
+          ASSET="$(printf '%s' "$REMOTE_STDOUT" \
+            | grep -o 'DEPLOYED_ASSET=/assets/index-[A-Za-z0-9_-]*\.js' \
+            | awk 'NR==1' | cut -d= -f2 || true)"
+          if [ -z "$ASSET" ]; then
+            echo "the deploy step did not report which bundle it published"
+            exit 1
+          fi
+          echo "expecting https://www.lanapaper.online to reference $ASSET"
+
+          # A proxy or a CDN can hold the old index.html for a few seconds.
+          for i in $(seq 1 10); do
+            HTML="$(curl -fsSL --max-time 20 https://www.lanapaper.online/ || true)"
+            case "$HTML" in
+              *"$ASSET"*)
+                curl -fsS --max-time 30 -o /dev/null "https://www.lanapaper.online$ASSET"
+                echo "www.lanapaper.online is serving $ASSET"
+                exit 0
+                ;;
+            esac
+            sleep 6
+          done
+
+          echo "www.lanapaper.online is still not referencing $ASSET"
+          exit 1

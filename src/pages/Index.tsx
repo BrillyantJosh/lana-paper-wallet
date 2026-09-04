@@ -2,12 +2,17 @@ import { Link } from 'react-router-dom';
 import WalletConverter from '@/components/WalletConverter';
 import headerImage from '@/assets/lana-header.png';
 import { Button } from '@/components/ui/button';
-import { Wallet, Printer } from 'lucide-react';
+import { Wallet, Printer, Package } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 const Index = () => {
+  // The label comes from this app's own three-language table. The package
+  // feature has a table of its own, but it speaks only two languages — reading
+  // the landing button out of it would leave this one word in English on an
+  // otherwise Hungarian page, and would pull the feature's whole string table
+  // into the landing bundle.
   const { t } = useLanguage();
-  
+
   return (
     <div className="min-h-screen bg-background">
       {/* Hero Header */}
@@ -20,7 +25,7 @@ const Index = () => {
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background/80" />
         
         {/* Top Right Buttons */}
-        <div className="absolute top-6 right-6 z-10 flex gap-2">
+        <div className="absolute top-6 right-6 z-10 flex flex-wrap justify-end gap-2">
           <Button
             variant="hero"
             size="lg"
@@ -50,6 +55,16 @@ const Index = () => {
               <Wallet className="h-5 w-5" />
               {t.createWallet}
             </a>
+          </Button>
+          <Button
+            variant="hero"
+            size="lg"
+            asChild
+          >
+            <Link to="/package" className="gap-2">
+              <Package className="h-5 w-5" />
+              {t.completePackage}
+            </Link>
           </Button>
         </div>
         

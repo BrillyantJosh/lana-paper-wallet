@@ -1,9 +1,26 @@
-import * as elliptic from 'elliptic';
+// Default import, not `import * as`: elliptic is CommonJS, and a namespace
+// import of it has no `.ec` outside a bundler — which is what tools/verify-wif.mjs
+// runs it as. Both forms give the same object under Vite; this one also loads
+// under plain node. Same `ec`, same behaviour.
+import elliptic from 'elliptic';
 import CryptoJS from 'crypto-js';
 import { bech32 } from 'bech32';
 
 // Initialize secp256k1 elliptic curve
 const ec = new elliptic.ec('secp256k1');
+
+/**
+ * LanaCoin's own version bytes, from the coin's src/chainparams.cpp:
+ *   SECRET_KEY     = 176 (0xb0) — the prefix of a WIF private key
+ *   PUBKEY_ADDRESS =  48 (0x30) — the prefix of an address
+ * They are exported so nothing has to re-type the numbers.
+ */
+export const LANA_WIF_VERSION = 0xb0;
+export const LANA_ADDRESS_VERSION = 0x30;
+
+/** The two version bytes as the two hex characters they occupy in a payload. */
+const LANA_WIF_VERSION_HEX = LANA_WIF_VERSION.toString(16).padStart(2, '0');
+const LANA_ADDRESS_VERSION_HEX = LANA_ADDRESS_VERSION.toString(16).padStart(2, '0');
 
 // Utility functions
 
@@ -16,7 +33,7 @@ export function normalizePrivateKey(input: string): string {
   return input.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
 }
 
-function hexToBytes(hex: string): number[] {
+export function hexToBytes(hex: string): number[] {
   const bytes: number[] = [];
   for (let i = 0; i < hex.length; i += 2) {
     bytes.push(parseInt(hex.substr(i, 2), 16));
@@ -24,12 +41,12 @@ function hexToBytes(hex: string): number[] {
   return bytes;
 }
 
-function bytesToHex(bytes: Uint8Array): string {
+export function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 // SHA-256 hash function using Web Crypto API
-async function sha256(hex: string): Promise<string> {
+export async function sha256(hex: string): Promise<string> {
   const bytes = hexToBytes(hex);
   const buffer = new Uint8Array(bytes);
   const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
@@ -104,6 +121,46 @@ function base58Decode(encoded: string): Uint8Array {
 }
 
 /**
+ * The same decoding, but written so that "this is not base58" is an answer
+ * rather than an exception — a person typing a key into a box gets it wrong all
+ * the time, and that is ordinary, not exceptional. Written out rather than
+ * wrapped around base58Decode above, because that one cannot tell an empty
+ * string from the single byte 0x00: both leave it with the digits 0, and it
+ * pads them back up to one zero byte. Here an empty input is null, and only a
+ * leading '1' produces a leading zero byte.
+ *
+ * base58Decode itself is left exactly as it is — wifToPrivateKey depends on it
+ * throwing.
+ */
+export function tryBase58Decode(input: string): Uint8Array | null {
+  if (!input) return null;
+  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+  let num = 0n;
+  for (const char of input) {
+    const digit = alphabet.indexOf(char);
+    if (digit === -1) return null;
+    num = num * 58n + BigInt(digit);
+  }
+
+  let hex = num.toString(16);
+  if (hex.length % 2) hex = '0' + hex;
+  const body = num === 0n ? [] : hexToBytes(hex);
+
+  // Every leading '1' is one leading zero byte — base58 has no other way to
+  // carry them, since they do not change the number.
+  let leadingZeros = 0;
+  for (const char of input) {
+    if (char !== '1') break;
+    leadingZeros++;
+  }
+
+  const out = new Uint8Array(leadingZeros + body.length);
+  out.set(body, leadingZeros);
+  return out;
+}
+
+/**
  * Result of WIF decoding — includes compression flag
  */
 export interface WifDecodeResult {
@@ -142,7 +199,7 @@ export async function wifToPrivateKey(wif: string): Promise<WifDecodeResult> {
     // 5. Verify LanaCoin prefix — accept BOTH formats
     //    0xB0 = old uncompressed (altcoin convention: 0x30 + 0x80)
     //    0x41 = new compressed (from chainparams.cpp SECRET_KEY=65)
-    if (payload[0] !== 0xb0 && payload[0] !== 0x41) {
+    if (payload[0] !== LANA_WIF_VERSION && payload[0] !== 0x41) {
       throw new Error('Invalid LANA WIF prefix - expected 0xB0 or 0x41, got 0x' + payload[0].toString(16));
     }
 
@@ -183,7 +240,7 @@ function generatePublicKey(privateKeyHex: string): string {
  * Generates compressed public key from private key using secp256k1
  * Returns 33 bytes: prefix (02 if y even, 03 if y odd) + x coordinate
  */
-function generateCompressedPublicKey(privateKeyHex: string): string {
+export function generateCompressedPublicKey(privateKeyHex: string): string {
   try {
     const keyPair = ec.keyFromPrivate(privateKeyHex);
     const pubKeyPoint = keyPair.getPublic();
@@ -202,7 +259,7 @@ function generateCompressedPublicKey(privateKeyHex: string): string {
  * Generates LanaCoin address from public key
  * Uses Hash160 (SHA256 + RIPEMD160) with version byte 0x30
  */
-async function generateLanaAddress(publicKeyHex: string): Promise<string> {
+export async function generateLanaAddress(publicKeyHex: string): Promise<string> {
   try {
     // 1. SHA-256 hash of public key
     const sha256Hash = await sha256(publicKeyHex);
@@ -211,7 +268,7 @@ async function generateLanaAddress(publicKeyHex: string): Promise<string> {
     const hash160 = ripemd160(sha256Hash);
     
     // 3. Add LanaCoin version byte (0x30 = 48 decimal)
-    const versionedPayload = "30" + hash160;
+    const versionedPayload = LANA_ADDRESS_VERSION_HEX + hash160;
     
     // 4. Calculate checksum (double SHA-256)
     const firstHash = await sha256(versionedPayload);
@@ -345,7 +402,7 @@ export async function generateNewWallet(): Promise<{ wif: string; address: strin
   const privateKeyHex = bytesToHex(privateKeyBytes);
 
   // 2. Encode as WIF with LanaCoin prefix 0xB0 + compression flag 0x01 (Staking, starts with T)
-  const extendedKey = "b0" + privateKeyHex + "01";
+  const extendedKey = LANA_WIF_VERSION_HEX + privateKeyHex + "01";
   const firstHash = await sha256(extendedKey);
   const secondHash = await sha256(firstHash);
   const checksum = secondHash.substring(0, 8);
