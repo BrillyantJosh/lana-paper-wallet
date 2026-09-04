@@ -28,6 +28,9 @@ interface StepKeysProps {
 
 const StepKeys = ({ lang, entries, onEntryChange, onBack, onNext }: StepKeysProps) => {
   const [scanUid, setScanUid] = useState<string | null>(null);
+  const [scanNotice, setScanNotice] = useState<Bilingual | null>(null);
+  /** Bumped to remount the scanner after it refuses a scan and stops itself. */
+  const [scanAttempt, setScanAttempt] = useState(0);
 
   // The document needs about seven megabytes of engraving and font. Fetching it
   // while the keys are still being typed turns the wait on the next screen from
@@ -79,7 +82,31 @@ const StepKeys = ({ lang, entries, onEntryChange, onBack, onNext }: StepKeysProp
     });
   }, [onEntryChange]);
 
-  const closeScanner = useCallback(() => setScanUid(null), []);
+  /**
+   * The scan check needs the current rows, but reading `entries` inside the
+   * callback would change its identity on every keystroke — and QRScanner
+   * restarts its camera whenever that happens. A ref keeps the callback stable.
+   */
+  const entriesRef = useRef(entries);
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
+
+  /** How a row is named when a message has to point at it. */
+  const rowLabel = useCallback(
+    (entry: WalletEntry) => {
+      const kind = walletKind(entry.kind);
+      const siblings = entriesRef.current.filter((e) => e.kind === entry.kind).length;
+      const name = t(kind.name, lang);
+      return siblings > 1 ? `${name} ${t(STR.pdfPositionOf(entry.position, siblings), lang)}` : name;
+    },
+    [lang],
+  );
+
+  const closeScanner = useCallback(() => {
+    setScanUid(null);
+    setScanNotice(null);
+  }, []);
 
   /**
    * QRScanner restarts its camera whenever this callback changes identity, so a
@@ -88,12 +115,38 @@ const StepKeys = ({ lang, entries, onEntryChange, onBack, onNext }: StepKeysProp
    * happens outlives its own cleanup, leaving the camera light on.
    */
   const handleScan = useCallback(
-    (text: string) => {
+    async (text: string) => {
       if (scanUid === null) return;
+
+      // Scanning the same wallet twice is the easy mistake: eight pieces of
+      // paper on a table, one gets read again instead of the next. Rather than
+      // accept it and complain further down a long page — where the scanner has
+      // already closed and the row may be out of sight — refuse it here, name
+      // the wallet that already holds it, and keep the camera looking.
+      try {
+        const result = await decodeWif(normalizeKeyInput(text));
+        if (result.ok !== false) {
+          const clash = entriesRef.current.find(
+            (e) => e.uid !== scanUid && e.keyId === result.keyId,
+          );
+          if (clash) {
+            setScanNotice(STR.scanDuplicateAt(rowLabel(clash)));
+            // The scanner stops itself after one decode, so it has to be
+            // remounted to look again.
+            setScanAttempt((n) => n + 1);
+            return;
+          }
+        }
+      } catch {
+        // Whatever went wrong deciding, handleInput will reach the same code
+        // and report it on the row. Never swallow the scan over it.
+      }
+
       handleInput(scanUid, text);
       setScanUid(null);
+      setScanNotice(null);
     },
-    [scanUid, handleInput],
+    [scanUid, handleInput, rowLabel],
   );
 
   /**
@@ -104,13 +157,13 @@ const StepKeys = ({ lang, entries, onEntryChange, onBack, onNext }: StepKeysProp
    * like two wallets, either of which empties the other.
    */
   const duplicates = useMemo(() => {
-    const firstSeenAt = new Map<string, string>();
-    const clashing = new Set<string>();
+    const firstSeenAt = new Map<string, WalletEntry>();
+    const clashing = new Map<string, WalletEntry>();
     for (const entry of entries) {
       if (!entry.keyId) continue;
       const first = firstSeenAt.get(entry.keyId);
-      if (first === undefined) firstSeenAt.set(entry.keyId, entry.uid);
-      else clashing.add(entry.uid);
+      if (first === undefined) firstSeenAt.set(entry.keyId, entry);
+      else clashing.set(entry.uid, first);
     }
     return clashing;
   }, [entries]);
@@ -123,6 +176,9 @@ const StepKeys = ({ lang, entries, onEntryChange, onBack, onNext }: StepKeysProp
 
   const done = entries.filter((e) => e.address !== null && !duplicates.has(e.uid)).length;
   const missing = entries.length - done;
+  // A duplicate counts as unfilled, but "one key still missing" is the wrong
+  // thing to say about a row that is full of the wrong key.
+  const duplicateCount = duplicates.size;
 
   return (
     <div className="space-y-8">
@@ -149,8 +205,11 @@ const StepKeys = ({ lang, entries, onEntryChange, onBack, onNext }: StepKeysProp
 
               {rows.map((entry) => {
                 const inputId = `key-${entry.uid}`;
-                const isDuplicate = duplicates.has(entry.uid);
-                const problem: Bilingual | null = isDuplicate ? STR.errDuplicate : entry.error;
+                const clashesWith = duplicates.get(entry.uid);
+                const isDuplicate = clashesWith !== undefined;
+                const problem: Bilingual | null = clashesWith
+                  ? STR.errDuplicateAt(rowLabel(clashesWith))
+                  : entry.error;
                 const filled = entry.address !== null && !isDuplicate;
 
                 return (
@@ -191,7 +250,10 @@ const StepKeys = ({ lang, entries, onEntryChange, onBack, onNext }: StepKeysProp
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={() => setScanUid(entry.uid)}
+                          onClick={() => {
+                            setScanNotice(null);
+                            setScanUid(entry.uid);
+                          }}
                           disabled={scanUid !== null}
                           className="shrink-0 px-3"
                         >
@@ -237,7 +299,14 @@ const StepKeys = ({ lang, entries, onEntryChange, onBack, onNext }: StepKeysProp
             className="h-1.5"
           />
           <p className="text-sm text-muted-foreground">
-            {t(missing === 0 ? STR.allFilled : STR.stillMissing(missing), lang)}
+            {t(
+              duplicateCount > 0
+                ? STR.stillDuplicate(duplicateCount)
+                : missing === 0
+                  ? STR.allFilled
+                  : STR.stillMissing(missing),
+              lang,
+            )}
           </p>
         </div>
 
@@ -258,9 +327,10 @@ const StepKeys = ({ lang, entries, onEntryChange, onBack, onNext }: StepKeysProp
 
       {scanUid !== null && (
         <QRScanner
-          key={scanUid}
+          key={`${scanUid}:${scanAttempt}`}
           onScan={handleScan}
           onClose={closeScanner}
+          notice={scanNotice ? t(scanNotice, lang) : undefined}
         />
       )}
     </div>

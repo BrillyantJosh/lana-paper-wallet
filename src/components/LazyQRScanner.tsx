@@ -14,11 +14,13 @@ import { Loader2 } from 'lucide-react';
 const QRScanner = lazy(() => import('@/components/QRScanner'));
 
 interface LazyQRScannerProps {
+  /** Forwarded verbatim — see QRScanner. */
+  notice?: string;
   onScan: (data: string) => void;
   onClose: () => void;
 }
 
-const LazyQRScanner = ({ onScan, onClose }: LazyQRScannerProps) => (
+const LazyQRScanner = ({ onScan, onClose, notice }: LazyQRScannerProps) => (
   <Suspense
     fallback={
       <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -26,7 +28,7 @@ const LazyQRScanner = ({ onScan, onClose }: LazyQRScannerProps) => (
       </div>
     }
   >
-    <QRScanner onScan={onScan} onClose={onClose} />
+    <QRScanner onScan={onScan} onClose={onClose} notice={notice} />
   </Suspense>
 );
 

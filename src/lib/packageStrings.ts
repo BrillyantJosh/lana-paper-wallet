@@ -152,10 +152,27 @@ export const STR = {
     'Brskalnik tukaj ne da dostopa do šifriranja. Odpri stran prek https:// ali na tej napravi.',
     'The browser withholds cryptography here. Open the page over https:// or on this device.',
   ),
-  errDuplicate: B(
-    'Ta ključ si v paketu že uporabil.',
-    'You have already used this key in the package.',
-  ),
+  /**
+   * Naming the wallet that already holds the key matters more than saying there
+   * is a clash: on a sheet of twelve rows, "already used" leaves the person
+   * hunting for where.
+   */
+  errDuplicateAt: (where: string) =>
+    B(
+      `Ta ključ je v paketu že pri: ${where}.`,
+      `This key is already in the package at: ${where}.`,
+    ),
+  /** Shown inside the camera while it keeps looking, so the scan can be redone on the spot. */
+  scanDuplicateAt: (where: string) =>
+    B(
+      `Ta ključ si že poskeniral — je pri: ${where}. Poskeniraj drugo denarnico.`,
+      `You have already scanned this key — it is at: ${where}. Scan a different wallet.`,
+    ),
+  stillDuplicate: (n: number) =>
+    B(
+      `${n} ${sl(n, 'denarnica ima', 'denarnici imata', 'denarnice imajo', 'denarnic ima')} ključ, ki je v paketu že drugje.`,
+      `${n} ${en(n, 'wallet holds a key', 'wallets hold a key')} that is already elsewhere in the package.`,
+    ),
 
   // ── Step 3 — the document ──────────────────────────────────────────────
   step3Heading: B('Paket je pripravljen', 'The package is ready'),

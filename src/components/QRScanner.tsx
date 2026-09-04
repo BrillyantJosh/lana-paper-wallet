@@ -2,17 +2,23 @@ import React, { useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Camera, X } from 'lucide-react';
+import { AlertTriangle, Camera, X } from 'lucide-react';
 
 interface QRScannerProps {
   onScan: (data: string) => void;
   onClose: () => void;
+  /**
+   * Shown across the top of the camera. The caller uses it to refuse a scan it
+   * cannot accept — a key already in the package, say — while the camera keeps
+   * looking, so the next wallet can be scanned without leaving the dialog.
+   */
+  notice?: string;
 }
 
 const PW = 640;
 const PH = 360;
 
-const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
+const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose, notice }) => {
   const videoRef    = useRef<HTMLVideoElement>(null);
   const canvasRef   = useRef<HTMLCanvasElement>(null);
   const animRef     = useRef<number | null>(null);
@@ -146,6 +152,13 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScan, onClose }) => {
             <X className="h-4 w-4" />
           </Button>
         </div>
+
+        {notice && (
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{notice}</span>
+          </div>
+        )}
 
         {error ? (
           <div className="text-destructive text-sm p-4 bg-destructive/10 rounded-lg">
