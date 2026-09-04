@@ -1,5 +1,5 @@
 import { AlertCircle, Check, Minus, Plus } from 'lucide-react';
-import { Bilingual, Lang, STR, t } from '@/lib/packageStrings';
+import { LANGS, Phrase, Lang, STR, t } from '@/lib/packageStrings';
 import {
   MAX_WALLETS_PER_PACKAGE,
   PackageDraft,
@@ -31,7 +31,7 @@ interface StepComposeProps {
 }
 
 /** How this kind may be counted — read from the kind, never assumed. */
-function countRule(kind: WalletKind): Bilingual {
+function countRule(kind: WalletKind): Phrase {
   if (kind.fixedCount && kind.fixedCount > 1) return STR.fixedSet;
   if (kind.maxCount === 1) return STR.onlyOne;
   return STR.severalAllowed;
@@ -48,7 +48,7 @@ const StepCompose = ({ lang, draft, onChange, onNext, onExit }: StepComposeProps
     onChange({ ...draft, counts });
   };
 
-  const blocker: Bilingual | null = !draft.fullName.trim()
+  const blocker: Phrase | null = !draft.fullName.trim()
     ? STR.fullNameMissing
     : total === 0
       ? STR.packageEmpty
@@ -100,6 +100,39 @@ const StepCompose = ({ lang, draft, onChange, onNext, onExit }: StepComposeProps
                 {draft.description.length} / {DESCRIPTION_MAX}
               </span>
             </div>
+          </div>
+
+          {/*
+            The language of the PAPER, which is not the language of the screen.
+            Each option is written in its own language, so it can be recognised
+            by someone who does not read the one currently selected.
+          */}
+          <div className="space-y-1.5">
+            <Label>{t(STR.docLangLabel, lang)}</Label>
+            <div
+              role="radiogroup"
+              aria-label={t(STR.docLangLabel, lang)}
+              className="flex flex-wrap gap-2"
+            >
+              {LANGS.map((option) => {
+                const chosen = option.id === draft.docLang;
+                return (
+                  <Button
+                    key={option.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={chosen}
+                    variant={chosen ? 'default' : 'outline'}
+                    onClick={() => onChange({ ...draft, docLang: option.id })}
+                    className="min-w-[7.5rem]"
+                  >
+                    {chosen && <Check className="mr-1.5 h-4 w-4" />}
+                    {option.label}
+                  </Button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">{t(STR.docLangHint, lang)}</p>
           </div>
         </CardContent>
       </Card>

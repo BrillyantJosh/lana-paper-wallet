@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AlertCircle, Download, Loader2, Printer, ShieldAlert } from 'lucide-react';
-import { Lang, STR, t } from '@/lib/packageStrings';
+import { LANGS, Lang, STR, t } from '@/lib/packageStrings';
 import { buildPackagePdf, packagePageCount, packagePdfFileName } from '@/lib/packagePdf';
 import {
   PackageDraft,
@@ -100,6 +100,11 @@ const StepDocument = ({ lang, draft, entries, onBack, onStartOver }: StepDocumen
               {t(STR.walletsInPackage(total), lang)}
             </span>
             <span className="text-muted-foreground">{t(STR.pdfPages(pages), lang)}</span>
+            {/* Worth repeating here: the paper's language was chosen two steps ago. */}
+            <span className="text-muted-foreground">
+              {t(STR.docLangLabel, lang)}:{' '}
+              {LANGS.find((l) => l.id === draft.docLang)?.label ?? draft.docLang}
+            </span>
           </div>
         </CardContent>
       </Card>

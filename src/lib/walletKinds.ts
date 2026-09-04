@@ -3,32 +3,37 @@ import walletThumb from '@/assets/thumbs/wallet.jpg';
 import retailThumb from '@/assets/thumbs/retail.jpg';
 import l8wThumb from '@/assets/thumbs/l8w.jpg';
 import coverThumb from '@/assets/thumbs/cover.jpg';
-import type { Bilingual } from './packageStrings';
+import { P, type Lang, type Phrase } from './packageStrings';
 
 export type WalletKindId = 'main' | 'wallet' | 'retail' | 'l8w';
 
-/** A rectangle on the page, as fractions (0–1) of page width and height. */
-export interface Box {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+/**
+ * A piece of engraving the PDF places by itself.
+ *
+ * The ornaments used to be full A4 sheets, and every page's text had to fit
+ * whatever gap the picture happened to leave — a different gap on every kind,
+ * measured by hand. They are now cut into two trimmed pieces, a mandala crown
+ * and a small footer motif (see tools/split-ornament.mjs), which the layout
+ * places where it wants them. The middle of the sheet is simply empty, the same
+ * on every kind, and the codes and the type could finally grow.
+ *
+ * `aspect` is width / height of the trimmed image, so it can be drawn to a
+ * chosen height without distortion.
+ */
+export interface Ornament {
+  url: string;
+  aspect: number;
 }
 
 export interface WalletKind {
   id: WalletKindId;
-  name: Bilingual;
+  name: Phrase;
   /** The character of this wallet type — shown in the picker and on the printed page. */
-  tagline: Bilingual;
-  /** Print-resolution ornament, served from /public and fetched only when a PDF is built. */
-  ornamentUrl: string;
+  tagline: Phrase;
+  crown: Ornament;
+  footer: Ornament;
   /** Small preview bundled with the app, for the picker. */
   thumbUrl: string;
-  /**
-   * Largest all-white rectangle inside the ornament — everything the PDF draws
-   * must stay inside it. Measured with `node tools/find-content-box.mjs`.
-   */
-  contentBox: Box;
   /** How many wallets of this kind a package may hold. */
   minCount: number;
   maxCount: number;
@@ -38,22 +43,18 @@ export interface WalletKind {
   numbered: boolean;
 }
 
-/**
- * Every ornament is a full-bleed A4 engraving with a clear white middle. The
- * ornaments are 2:3, the page is 1:√2, so a page draws its ornament fitted to
- * the page height — the leftover strip on each side is paper white anyway.
- */
 export const WALLET_KINDS: WalletKind[] = [
   {
     id: 'main',
-    name: { sl: 'Glavna denarnica', en: 'Main Wallet' },
-    tagline: {
-      sl: 'Denarnica, ki odklene vsa vrata.',
-      en: 'The wallet that unlocks every door.',
-    },
-    ornamentUrl: '/ornaments/main.png',
+    name: P('Glavna denarnica', 'Main Wallet', 'Fő tárca'),
+    tagline: P(
+      'Denarnica, ki odklene vsa vrata.',
+      'The wallet that unlocks every door.',
+      'A tárca, amely minden ajtót kinyit.',
+    ),
+    crown: { url: '/ornaments/main-crown.png', aspect: 0.9982 },
+    footer: { url: '/ornaments/main-footer.png', aspect: 1.0244 },
     thumbUrl: mainThumb,
-    contentBox: { x: 0.1510, y: 0.3470, w: 0.6996, h: 0.3660 },
     minCount: 1,
     maxCount: 1,
     fixedCount: 1,
@@ -61,42 +62,45 @@ export const WALLET_KINDS: WalletKind[] = [
   },
   {
     id: 'wallet',
-    name: { sl: 'Denarnica', en: 'Wallet' },
-    tagline: {
-      sl: 'Tvoja mirna, vsakdanja denarnica.',
-      en: 'Your calm, everyday wallet.',
-    },
-    ornamentUrl: '/ornaments/wallet.png',
+    name: P('Denarnica', 'Wallet', 'Tárca'),
+    tagline: P(
+      'Tvoja mirna, vsakdanja denarnica.',
+      'Your calm, everyday wallet.',
+      'A nyugodt, mindennapi tárcája.',
+    ),
+    crown: { url: '/ornaments/wallet-crown.png', aspect: 0.9946 },
+    footer: { url: '/ornaments/wallet-footer.png', aspect: 0.875 },
     thumbUrl: walletThumb,
-    contentBox: { x: 0.1749, y: 0.1738, w: 0.6507, h: 0.7053 },
     minCount: 1,
     maxCount: 40,
     numbered: false,
   },
   {
     id: 'retail',
-    name: { sl: 'Nakupovalna denarnica', en: 'Retail Wallet' },
-    tagline: {
-      sl: 'Za trošenje v ekonomiji Obilja.',
-      en: 'For spending in the economy of Abundance.',
-    },
-    ornamentUrl: '/ornaments/retail.png',
+    name: P('Nakupovalna denarnica', 'Retail Wallet', 'Vásárlói tárca'),
+    tagline: P(
+      'Za trošenje v ekonomiji Obilja.',
+      'For spending in the economy of Abundance.',
+      'Költésre a Bőség gazdaságában.',
+    ),
+    crown: { url: '/ornaments/retail-crown.png', aspect: 1.0055 },
+    footer: { url: '/ornaments/retail-footer.png', aspect: 1.0219 },
     thumbUrl: retailThumb,
-    contentBox: { x: 0.2388, y: 0.2524, w: 0.5245, h: 0.4839 },
     minCount: 1,
     maxCount: 40,
     numbered: false,
   },
   {
     id: 'l8w',
-    name: { sl: 'Lana8Wonder', en: 'Lana8Wonder' },
-    tagline: {
-      sl: 'Osem denarnic, osem čudes.',
-      en: 'Eight wallets, eight wonders.',
-    },
-    ornamentUrl: '/ornaments/l8w.png',
+    name: P('Lana8Wonder', 'Lana8Wonder', 'Lana8Wonder'),
+    tagline: P(
+      'Osem denarnic, osem čudes.',
+      'Eight wallets, eight wonders.',
+      'Nyolc tárca, nyolc csoda.',
+    ),
+    crown: { url: '/ornaments/l8w-crown.png', aspect: 1.0436 },
+    footer: { url: '/ornaments/l8w-footer.png', aspect: 1.0024 },
     thumbUrl: l8wThumb,
-    contentBox: { x: 0.1297, y: 0.3638, w: 0.7422, h: 0.3717 },
     minCount: 8,
     maxCount: 8,
     fixedCount: 8,
@@ -105,15 +109,9 @@ export const WALLET_KINDS: WalletKind[] = [
 ];
 
 export const COVER_ORNAMENT = {
-  ornamentUrl: '/ornaments/cover.png',
+  crown: { url: '/ornaments/cover-crown.png', aspect: 1.0092 } as Ornament,
+  footer: { url: '/ornaments/cover-footer.png', aspect: 1.9718 } as Ornament,
   thumbUrl: coverThumb,
-  contentBox: { x: 0.1845, y: 0.2791, w: 0.6320, h: 0.5242 } as Box,
-  /**
-   * The blank oval inside the engraved arch, high above the content box. The
-   * arch was drawn around a mark; leaving it empty and setting the mark below
-   * it reads as two attempts at the same thing.
-   */
-  cartouche: { x: 0.4417, y: 0.0994, w: 0.1182, h: 0.0977 } as Box,
 };
 
 /** The whole package may not grow past this — a print job, not a database. */
@@ -143,13 +141,19 @@ export interface WalletEntry {
    * differ — that is how one key entered in both its encodings is caught.
    */
   keyId: string | null;
-  /** Bilingual reason the input was rejected, or null while it is still empty. */
-  error: Bilingual | null;
+  /** Reason the input was rejected, or null while it is still empty. */
+  error: Phrase | null;
 }
 
 export interface PackageDraft {
   fullName: string;
   description: string;
+  /**
+   * The language the DOCUMENT is printed in — chosen on step 1, and not
+   * necessarily the language of the screen. A package is often made for
+   * somebody else.
+   */
+  docLang: Lang;
   /** How many wallets of each kind — absent or 0 means the kind is not included. */
   counts: Partial<Record<WalletKindId, number>>;
 }

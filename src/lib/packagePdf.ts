@@ -1,13 +1,13 @@
 import jsPDF from 'jspdf';
 import QRCode from 'qrcode';
-import { STR } from './packageStrings';
-import type { Bilingual } from './packageStrings';
+import { STR, t } from './packageStrings';
+import type { Lang } from './packageStrings';
 import {
   COVER_ORNAMENT,
   WALLET_KINDS,
   walletKind,
 } from './walletKinds';
-import type { Box, PackageDraft, WalletEntry, WalletKindId } from './walletKinds';
+import type { Ornament, PackageDraft, WalletEntry, WalletKindId } from './walletKinds';
 import { GARAMOND, MONO, preloadPdfFonts, registerPdfFonts } from './pdfFonts';
 
 export interface PackagePdfInput {
@@ -18,8 +18,48 @@ export interface PackagePdfInput {
 
 /* ── page geometry ─────────────────────────────────────────────────────── */
 
-/** Where the ornament sits: inside the printer-safe area, never bleeding. */
-const ORN = { x: 11.333, y: 8.0, w: 187.333, h: 281.0 };
+/**
+ * A4, with a printer-safe margin: most home printers clip about 5 mm, so
+ * nothing is drawn outside these bounds.
+ */
+const PAGE = { w: 210, h: 297 };
+
+/**
+ * The mandala at the top and the small motif at the bottom are placed by the
+ * layout rather than being part of a full-page picture, so the middle of every
+ * sheet is the same generous empty rectangle whatever kind of wallet it is.
+ */
+const CROWN = { h: 64, top: 14 };
+const FOOTER = { h: 13, bottom: 279 };
+
+/** Everything the page writes goes in here — 166 × 176 mm, the same on every kind. */
+const A = {
+  x0: 22,
+  x1: 188,
+  // Four millimetres clear of the crown, which ends at CROWN.top + CROWN.h.
+  y0: 82,
+  y1: 258,
+  cx: 105,
+  /** The two code columns, with a gutter between them. */
+  leftX0: 22,
+  leftX1: 98,
+  leftCx: 60,
+  rightX0: 112,
+  rightX1: 188,
+  rightCx: 150,
+  colW: 76,
+};
+
+/** The cover writes into the same rectangle, on a narrower rail. */
+const C = {
+  x0: 22,
+  x1: 188,
+  cx: 105,
+  railL: 52,
+  railR: 158,
+  railW: 106,
+  w: 166,
+};
 
 /** 1 pt in mm. */
 const PT = 0.352778;
@@ -28,55 +68,22 @@ const PT = 0.352778;
 const CAP = { [GARAMOND]: 0.66, [MONO]: 0.7 } as Record<string, number>;
 const DESC = { [GARAMOND]: 0.27, [MONO]: 0.3 } as Record<string, number>;
 
-const JOIN = ' · ';
 const TIMES = '× ';
 const ELLIPSIS = '…';
 
-/** The one block every wallet page draws into — identical on all four kinds. */
-const P = {
-  x0: 57.1,
-  x1: 153.3,
-  w: 96.2,
-  addrX: 57.1,
-  addrW: 33.0,
-  addrCx: 73.6,
-  keyX: 97.3,
-  keyW: 56.0,
-  keyCx: 125.3,
-  headX: 65.9,
-};
-
-/** The cover's block, and the inner rail its contents list runs on. */
-const C = {
-  x0: 46.9,
-  x1: 163.3,
-  w: 116.4,
-  cx: 105.1,
-  railL: 66.9,
-  railR: 143.3,
-  railW: 76.4,
-};
-
 type MmBox = { x0: number; y0: number; x1: number; y1: number };
 
-function boxToMm(b: Box): MmBox {
-  return {
-    x0: ORN.x + b.x * ORN.w,
-    y0: ORN.y + b.y * ORN.h,
-    x1: ORN.x + (b.x + b.w) * ORN.w,
-    y1: ORN.y + (b.y + b.h) * ORN.h,
-  };
-}
+/** The writing area, as the guard sees it. */
+const CONTENT_BOX: MmBox = { x0: A.x0, y0: A.y0, x1: A.x1, y1: A.y1 };
 
 /* ── the guard ─────────────────────────────────────────────────────────── */
 
 const DEV = (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true;
 
 /**
- * The whole design rests on nothing being drawn outside the engraving's clear
- * middle. In development every rectangle is checked against the content box of
- * the ornament it lands on, so whoever edits the layout next finds out at once
- * that they pushed an element onto the ink.
+ * Nothing may be drawn outside the writing area — the ornaments sit above and
+ * below it, and text that strays lands on the engraving. In development every
+ * rectangle is checked, so whoever edits the layout next finds out at once.
  */
 function assertInside(
   name: string,
@@ -209,8 +216,6 @@ function twoLines(
   return { lines: [lines[0], second + ELLIPSIS], size: fallbackPt };
 }
 
-const pair = (b: Bilingual): string => b.sl + JOIN + b.en;
-
 /**
  * Fixed character offsets, not measured widths, so the break sits in the same
  * place on every page in a stack. Nothing is drawn at the break.
@@ -223,6 +228,9 @@ function splitAt(s: string, at: number): [string, string] {
 /* ── assets ────────────────────────────────────────────────────────────── */
 
 const MARK_URL = '/lana-mark.png';
+
+/** The trimmed emblem is 180 × 212 px. */
+const MARK_ASPECT = 180 / 212;
 
 /**
  * Each ornament and the emblem are fetched once and held as a data URL. Passing
@@ -317,15 +325,16 @@ function countByKind(entries: WalletEntry[]): Record<WalletKindId, number> {
 export function prefetchPackageAssets(kindIds: WalletKindId[]): void {
   const urls = [
     MARK_URL,
-    COVER_ORNAMENT.ornamentUrl,
-    ...WALLET_KINDS.filter((k) => kindIds.includes(k.id)).map((k) => k.ornamentUrl),
+    COVER_ORNAMENT.crown.url,
+    COVER_ORNAMENT.footer.url,
+    ...WALLET_KINDS.filter((k) => kindIds.includes(k.id)).flatMap((k) => [k.crown.url, k.footer.url]),
   ];
   for (const url of urls) void loadAsset(url).catch(() => undefined);
   void preloadPdfFonts().catch(() => undefined);
 }
-
 export async function buildPackagePdf(input: PackagePdfInput): Promise<Blob> {
   const { draft, entries, issuedOn } = input;
+  const lang = draft.docLang;
 
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -342,196 +351,216 @@ export async function buildPackagePdf(input: PackagePdfInput): Promise<Blob> {
   const counts = countByKind(entries);
   const usedKinds = WALLET_KINDS.filter((k) => (counts[k.id] ?? 0) > 0);
 
-  // Every image the document needs, fetched once and reused by alias.
-  const [mark, coverOrn, ...kindOrns] = await Promise.all([
-    loadAsset(MARK_URL),
-    loadAsset(COVER_ORNAMENT.ornamentUrl),
-    ...usedKinds.map((k) => loadAsset(k.ornamentUrl)),
-  ]);
-  const ornByKind = new Map<WalletKindId, string>();
-  usedKinds.forEach((k, i) => ornByKind.set(k.id, kindOrns[i]));
+  // Every image the document needs, fetched once and reused by alias. jsPDF
+  // stores an aliased image a single time however many pages draw it.
+  const wanted = [
+    MARK_URL,
+    COVER_ORNAMENT.crown.url,
+    COVER_ORNAMENT.footer.url,
+    ...usedKinds.flatMap((k) => [k.crown.url, k.footer.url]),
+  ];
+  const loaded = new Map<string, string>();
+  await Promise.all(
+    [...new Set(wanted)].map(async (url) => loaded.set(url, await loadAsset(url))),
+  );
+  const asset = (url: string): string => {
+    const data = loaded.get(url);
+    if (!data) throw new Error(`asset not loaded: ${url}`);
+    return data;
+  };
 
   const totalPages = packagePageCount(entries);
 
-  drawCover(doc, draft, counts, usedKinds.map((k) => k.id), issuedOn, mark, coverOrn);
+  drawCover(doc, lang, draft, counts, usedKinds.map((k) => k.id), issuedOn, asset);
 
   for (let i = 0; i < entries.length; i++) {
     doc.addPage('a4', 'portrait');
     await drawWalletPage(
       doc,
+      lang,
       draft,
       entries[i],
       counts[entries[i].kind] ?? 1,
       i + 2,
       totalPages,
-      mark,
-      ornByKind.get(entries[i].kind) as string,
+      asset,
     );
   }
 
   return doc.output('blob');
 }
 
+/* ── the engraving ─────────────────────────────────────────────────────── */
+
+type AssetFn = (url: string) => string;
+
+/** Centred at the top of the sheet, drawn to a fixed height whatever its shape. */
+function drawCrown(doc: jsPDF, orn: Ornament, asset: AssetFn, alias: string): void {
+  const h = CROWN.h;
+  const w = h * orn.aspect;
+  doc.addImage(asset(orn.url), 'PNG', PAGE.w / 2 - w / 2, CROWN.top, w, h, alias, 'FAST');
+}
+
+/** The small motif, centred near the foot of the sheet. */
+function drawFooterMotif(doc: jsPDF, orn: Ornament, asset: AssetFn, alias: string): void {
+  const h = FOOTER.h;
+  const w = h * orn.aspect;
+  doc.addImage(
+    asset(orn.url), 'PNG',
+    PAGE.w / 2 - w / 2, FOOTER.bottom - h, w, h, alias, 'FAST',
+  );
+}
+
 /* ── the cover ─────────────────────────────────────────────────────────── */
 
 function drawCover(
   doc: jsPDF,
+  lang: Lang,
   draft: PackageDraft,
   counts: Record<WalletKindId, number>,
   kindIds: WalletKindId[],
   issuedOn: Date,
-  mark: string,
-  ornament: string,
+  asset: AssetFn,
 ): void {
-  doc.addImage(ornament, 'PNG', ORN.x, ORN.y, ORN.w, ORN.h, 'orn-cover', 'FAST');
+  drawCrown(doc, COVER_ORNAMENT.crown, asset, 'crown-cover');
+  drawFooterMotif(doc, COVER_ORNAMENT.footer, asset, 'foot-cover');
 
-  const ctx: Ctx = { doc, box: boxToMm(COVER_ORNAMENT.contentBox) };
+  // The cover mandala is drawn around an empty circle; the emblem goes in it,
+  // sized to fill that circle rather than float in it.
+  const markH = CROWN.h * 0.22;
+  const markW = markH * MARK_ASPECT;
+  doc.addImage(
+    asset(MARK_URL), 'PNG',
+    PAGE.w / 2 - markW / 2, CROWN.top + CROWN.h / 2 - markH / 2, markW, markH,
+    'mark', 'FAST',
+  );
 
-  // The emblem goes into the engraved oval at the crown of the arch, which sits
-  // far above the content box — so it is checked against the cartouche instead.
-  const oval: Ctx = { doc, box: boxToMm(COVER_ORNAMENT.cartouche) };
-  image(oval, 'cover emblem', mark, 96.23, 39.15, 17.83, 21.0, 'mark');
+  const ctx: Ctx = { doc, box: CONTENT_BOX };
 
-  text(ctx, 'cover title SL', STR.pdfCoverTitle.sl, C.cx, 100.4, 'center', GARAMOND, 'bold', 24);
-  text(ctx, 'cover title EN', STR.pdfCoverTitle.en, C.cx, 108.4, 'center', GARAMOND, 'normal', 13);
-  rule(ctx, 'cover rule B', C.x0, C.x1, 113.4, 0.4);
+  text(ctx, 'cover title', t(STR.pdfCoverTitle, lang), C.cx, 98, 'center', GARAMOND, 'bold', 28);
+  rule(ctx, 'cover rule A', C.railL, C.railR, 106, 0.4);
 
-  text(ctx, 'cover owner label', pair(STR.pdfCoverOwner), C.cx, 121.4, 'center', GARAMOND, 'normal', 8.5);
-  const owner = fitOneLine(doc, draft.fullName || '', GARAMOND, 'bold', 17, C.w, 12);
-  text(ctx, 'cover owner', owner.text, C.cx, 130.0, 'center', GARAMOND, 'bold', owner.size);
+  text(ctx, 'cover owner label', t(STR.pdfCoverOwner, lang), C.cx, 116, 'center', GARAMOND, 'normal', 11);
+  const owner = fitOneLine(doc, draft.fullName || '', GARAMOND, 'bold', 22, C.w, 14);
+  text(ctx, 'cover owner', owner.text, C.cx, 128, 'center', GARAMOND, 'bold', owner.size);
 
-  // Empty description leaves both rows blank and moves nothing below it.
-  const desc = twoLines(doc, draft.description, GARAMOND, 'normal', 10.5, 9, C.w);
-  if (desc.lines[0]) {
-    text(ctx, 'cover description L1', desc.lines[0], C.cx, 137.4, 'center', GARAMOND, 'normal', desc.size);
-  }
-  if (desc.lines[1]) {
-    text(ctx, 'cover description L2', desc.lines[1], C.cx, 142.0, 'center', GARAMOND, 'normal', desc.size);
-  }
+  // An empty description draws nothing and moves nothing below it.
+  const desc = twoLines(doc, draft.description, GARAMOND, 'normal', 13, 11, C.w);
+  if (desc.lines[0]) text(ctx, 'cover description L1', desc.lines[0], C.cx, 139, 'center', GARAMOND, 'normal', desc.size);
+  if (desc.lines[1]) text(ctx, 'cover description L2', desc.lines[1], C.cx, 145.5, 'center', GARAMOND, 'normal', desc.size);
 
-  rule(ctx, 'cover rule C', C.railL, C.railR, 147.0, 0.15);
-  text(ctx, 'cover contents label', pair(STR.pdfCoverContents), C.cx, 154.0, 'center', GARAMOND, 'normal', 8.5);
+  rule(ctx, 'cover rule B', C.railL, C.railR, 154, 0.15);
+  text(ctx, 'cover contents label', t(STR.pdfCoverContents, lang), C.cx, 163, 'center', GARAMOND, 'normal', 11);
 
-  // Four slots, always 6.0 mm apart; unused slots are simply not drawn.
+  // Four slots, always 9.0 mm apart; unused slots are simply not drawn.
   kindIds.slice(0, 4).forEach((id, i) => {
     const kind = walletKind(id);
-    const y = 162.0 + i * 6.0;
-    text(ctx, `cover contents ${id}`, pair(kind.name), C.railL, y, 'left', GARAMOND, 'normal', 11);
-    text(ctx, `cover count ${id}`, TIMES + counts[id], C.railR, y, 'right', GARAMOND, 'normal', 11);
+    const y = 174 + i * 9;
+    const label = fitOneLine(doc, t(kind.name, lang), GARAMOND, 'normal', 14, C.railW - 20, 10);
+    text(ctx, `cover contents ${id}`, label.text, C.railL, y, 'left', GARAMOND, 'normal', label.size);
+    text(ctx, `cover count ${id}`, TIMES + counts[id], C.railR, y, 'right', GARAMOND, 'normal', 14);
   });
 
-  rule(ctx, 'cover rule D', C.railL, C.railR, 186.0, 0.15);
-  text(ctx, 'cover issued label', pair(STR.pdfCoverIssued), C.cx, 193.0, 'center', GARAMOND, 'normal', 8.5);
-  text(ctx, 'cover issued date', isoDate(issuedOn), C.cx, 200.0, 'center', MONO, 'normal', 10);
+  rule(ctx, 'cover rule C', C.railL, C.railR, 214, 0.15);
+  text(ctx, 'cover issued label', t(STR.pdfCoverIssued, lang), C.cx, 223, 'center', GARAMOND, 'normal', 11);
+  text(ctx, 'cover issued date', isoDate(issuedOn), C.cx, 232, 'center', MONO, 'normal', 13);
 
-  text(ctx, 'cover safety SL', STR.keySafety.sl, C.cx, 208.0, 'center', GARAMOND, 'normal', 8);
-  text(ctx, 'cover safety EN', STR.keySafety.en, C.cx, 211.7, 'center', GARAMOND, 'normal', 8);
-  text(ctx, 'cover footer', STR.pdfFooter.sl, C.cx, 216.4, 'center', GARAMOND, 'normal', 8);
+  const safety = twoLines(doc, t(STR.keySafety, lang), GARAMOND, 'normal', 10, 9, C.w);
+  if (safety.lines[0]) text(ctx, 'cover safety L1', safety.lines[0], C.cx, 245, 'center', GARAMOND, 'normal', safety.size);
+  if (safety.lines[1]) text(ctx, 'cover safety L2', safety.lines[1], C.cx, 250, 'center', GARAMOND, 'normal', safety.size);
+  text(ctx, 'cover footer', t(STR.pdfFooter, lang), C.cx, 257, 'center', GARAMOND, 'normal', 9);
 }
 
 /* ── a wallet page ─────────────────────────────────────────────────────── */
 
 async function drawWalletPage(
   doc: jsPDF,
+  lang: Lang,
   draft: PackageDraft,
   entry: WalletEntry,
   countOfKind: number,
   pageNumber: number,
   totalPages: number,
-  mark: string,
-  ornament: string,
+  asset: AssetFn,
 ): Promise<void> {
   const kind = walletKind(entry.kind);
-  doc.addImage(ornament, 'PNG', ORN.x, ORN.y, ORN.w, ORN.h, `orn-${kind.id}`, 'FAST');
+  drawCrown(doc, kind.crown, asset, `crown-${kind.id}`);
+  drawFooterMotif(doc, kind.footer, asset, `foot-${kind.id}`);
 
-  const ctx: Ctx = { doc, box: boxToMm(kind.contentBox) };
+  const ctx: Ctx = { doc, box: CONTENT_BOX };
 
-  // Header.
-  image(ctx, 'emblem', mark, P.x0, 111.2, 5.944, 7.0, 'mark');
-  const name = fitOneLine(doc, kind.name.sl, GARAMOND, 'bold', 13, 44.4, 10);
-  text(ctx, 'kind name SL', name.text, P.headX, 115.5, 'left', GARAMOND, 'bold', name.size);
+  // ── who and what ────────────────────────────────────────────────────
+  const name = fitOneLine(doc, t(kind.name, lang), GARAMOND, 'bold', 26, A.x1 - A.x0, 16);
+  text(ctx, 'kind name', name.text, A.cx, 92, 'center', GARAMOND, 'bold', name.size);
+  const tagline = fitOneLine(doc, t(kind.tagline, lang), GARAMOND, 'normal', 12, A.x1 - A.x0, 9);
+  text(ctx, 'tagline', tagline.text, A.cx, 100, 'center', GARAMOND, 'normal', tagline.size);
 
-  // Drawn whenever the package holds more than one of this kind — that is what
-  // makes a stack of forty otherwise identical sheets sortable by hand.
-  if (countOfKind > 1) {
+  // A set is numbered so the sheets can be told apart and kept in order.
+  if (kind.numbered && countOfKind > 1) {
     text(
-      ctx,
-      'position',
-      pair(STR.pdfPositionOf(entry.position, countOfKind)),
-      P.x1,
-      115.5,
-      'right',
-      MONO,
-      'normal',
-      9,
+      ctx, 'position',
+      t(STR.pdfPositionOf(entry.position, countOfKind), lang),
+      A.cx, 108, 'center', MONO, 'normal', 14,
     );
   }
 
-  text(ctx, 'kind name EN', kind.name.en, P.headX, 118.8, 'left', GARAMOND, 'normal', 8.5);
-  text(ctx, 'tagline', pair(kind.tagline), P.x0, 122.1, 'left', GARAMOND, 'normal', 7);
-  rule(ctx, 'header rule', P.x0, P.x1, 124.1, 0.3);
+  const owner = fitOneLine(doc, draft.fullName || '', GARAMOND, 'bold', 18, A.x1 - A.x0, 12);
+  text(ctx, 'owner', owner.text, A.cx, 119, 'center', GARAMOND, 'bold', owner.size);
 
-  const owner = fitOneLine(doc, draft.fullName || '', GARAMOND, 'bold', 13, P.w, 10);
-  text(ctx, 'owner', owner.text, P.x0, 128.5, 'left', GARAMOND, 'bold', owner.size);
+  const desc = twoLines(doc, draft.description, GARAMOND, 'normal', 12, 10, A.x1 - A.x0);
+  if (desc.lines[0]) text(ctx, 'description L1', desc.lines[0], A.cx, 128, 'center', GARAMOND, 'normal', desc.size);
+  if (desc.lines[1]) text(ctx, 'description L2', desc.lines[1], A.cx, 134, 'center', GARAMOND, 'normal', desc.size);
 
-  const desc = twoLines(doc, draft.description, GARAMOND, 'normal', 8.5, 7.5, P.w);
-  if (desc.lines[0]) {
-    text(ctx, 'description L1', desc.lines[0], P.x0, 132.7, 'left', GARAMOND, 'normal', desc.size);
-  }
-  if (desc.lines[1]) {
-    text(ctx, 'description L2', desc.lines[1], P.x0, 136.3, 'left', GARAMOND, 'normal', desc.size);
-  }
+  // ── the two codes ───────────────────────────────────────────────────
+  // Told apart without colour: the address is on the LEFT, under an OUTLINED
+  // bar, with a SMALLER code; the private key is on the RIGHT, under a SOLID
+  // BLACK bar with reversed type, and its code is bigger. A solid black tab
+  // survives a photocopier, a dying cartridge and every kind of colour blindness.
+  const BAR_Y = 140, BAR_H = 10;
+  doc.setLineWidth(0.3);
+  assertInside('address bar', ctx.box, A.leftX0, BAR_Y, A.colW, BAR_H);
+  doc.rect(A.leftX0, BAR_Y, A.colW, BAR_H, 'S');
+  text(ctx, 'address caption', t(STR.pdfWalletAddress, lang), A.leftCx, BAR_Y + 7, 'center', GARAMOND, 'bold', 13);
 
-  // The two caption bars. The address is outlined, the private key is a solid
-  // black tab with reversed type — a binary signal that survives a photocopier.
-  assertInside('address bar', ctx.box, P.addrX, 138.9, P.addrW, 9.0);
-  doc.setLineWidth(0.35);
-  doc.rect(P.addrX, 138.9, P.addrW, 9.0, 'S');
-  assertInside('key bar', ctx.box, P.keyX, 138.9, P.keyW, 9.0);
-  doc.rect(P.keyX, 138.9, P.keyW, 9.0, 'F');
-
-  text(ctx, 'address caption SL', STR.pdfWalletAddress.sl, 60.1, 142.4, 'left', GARAMOND, 'bold', 9);
-  text(ctx, 'address caption EN', STR.pdfWalletAddress.en, 60.1, 145.4, 'left', GARAMOND, 'normal', 7);
-
+  assertInside('key bar', ctx.box, A.rightX0, BAR_Y, A.colW, BAR_H);
+  doc.rect(A.rightX0, BAR_Y, A.colW, BAR_H, 'F');
   doc.setTextColor(255, 255, 255);
-  text(ctx, 'key caption SL', STR.pdfPrivateKey.sl, 100.3, 142.4, 'left', GARAMOND, 'bold', 9);
-  text(ctx, 'key caption EN', STR.pdfPrivateKey.en, 100.3, 145.4, 'left', GARAMOND, 'normal', 7);
+  text(ctx, 'key caption', t(STR.pdfPrivateKey, lang), A.rightCx, BAR_Y + 7, 'center', GARAMOND, 'bold', 13);
   doc.setTextColor(0);
 
-  text(ctx, 'scan to receive', pair(STR.pdfScanToReceive), P.addrCx, 150.6, 'center', GARAMOND, 'normal', 6.5);
-  text(ctx, 'scan to spend', pair(STR.pdfScanToSpend), P.keyCx, 150.6, 'center', GARAMOND, 'normal', 6.5);
+  text(ctx, 'scan to receive', t(STR.pdfScanToReceive, lang), A.leftCx, 157, 'center', GARAMOND, 'normal', 9.5);
+  text(ctx, 'scan to spend', t(STR.pdfScanToSpend, lang), A.rightCx, 157, 'center', GARAMOND, 'normal', 9.5);
 
   // The address can be re-derived from the key, so it can afford level M; the
   // key cannot be recovered from anything, so it gets Q's 25 % damage tolerance.
   const address = entry.address ?? '';
   const wif = entry.wif ?? '';
   const [addressQr, keyQr] = await Promise.all([qr(address, 'M'), qr(wif, 'Q')]);
-  image(ctx, 'address QR', addressQr, 61.35, 155.2, 24.5, 24.5, `qr-a-${entry.uid}`);
-  image(ctx, 'key QR', keyQr, 110.3, 155.2, 30.0, 30.0, `qr-k-${entry.uid}`);
 
+  // The key's code is the bigger of the two, and its block of type sits lower
+  // because of it. The numbers are chosen so the lower block still clears the
+  // safety line: 161 + 70 + 15.5 = 246.5, against a baseline at 252.
+  const ADDR_QR = 58, KEY_QR = 70, QR_TOP = 161;
+  image(ctx, 'address QR', addressQr, A.leftCx - ADDR_QR / 2, QR_TOP, ADDR_QR, ADDR_QR, `qr-a-${entry.uid}`);
+  image(ctx, 'key QR', keyQr, A.rightCx - KEY_QR / 2, QR_TOP, KEY_QR, KEY_QR, `qr-k-${entry.uid}`);
+
+  // Broken once, at a fixed character offset so the break sits in the same place
+  // on every sheet in a stack.
   const [a1, a2] = splitAt(address, 17);
-  text(ctx, 'address line 1', a1, P.addrCx, 191.3, 'center', MONO, 'normal', 8.5);
-  text(ctx, 'address line 2', a2, P.addrCx, 195.5, 'center', MONO, 'normal', 8.5);
+  text(ctx, 'address line 1', a1, A.leftCx, QR_TOP + ADDR_QR + 9, 'center', MONO, 'normal', 12);
+  text(ctx, 'address line 2', a2, A.leftCx, QR_TOP + ADDR_QR + 15.5, 'center', MONO, 'normal', 12);
 
   const [k1, k2] = splitAt(wif, 26);
-  text(ctx, 'wif line 1', k1, P.keyCx, 191.3, 'center', MONO, 'normal', 9.5);
-  text(ctx, 'wif line 2', k2, P.keyCx, 195.5, 'center', MONO, 'normal', 9.5);
+  text(ctx, 'wif line 1', k1, A.rightCx, QR_TOP + KEY_QR + 9, 'center', MONO, 'normal', 12);
+  text(ctx, 'wif line 2', k2, A.rightCx, QR_TOP + KEY_QR + 15.5, 'center', MONO, 'normal', 12);
 
-  rule(ctx, 'address hairline', P.addrX, P.addrX + P.addrW, 197.7, 0.15);
-  rule(ctx, 'key rule', P.keyX, P.keyX + P.keyW, 197.7, 1.0);
-
-  text(ctx, 'safety SL', STR.keySafety.sl, P.x0, 200.5, 'left', GARAMOND, 'normal', 6.5);
-  text(ctx, 'safety EN', STR.keySafety.en, P.x0, 203.6, 'left', GARAMOND, 'normal', 6.5);
-  text(ctx, 'footer', STR.pdfFooter.sl, P.x0, 206.7, 'left', GARAMOND, 'normal', 6.5);
+  // ── the small print ─────────────────────────────────────────────────
+  const safety = fitOneLine(doc, t(STR.keySafety, lang), GARAMOND, 'normal', 9.5, A.x1 - A.x0, 7);
+  text(ctx, 'safety', safety.text, A.cx, 252, 'center', GARAMOND, 'normal', safety.size);
+  text(ctx, 'footer', t(STR.pdfFooter, lang), A.x0, 256.5, 'left', GARAMOND, 'normal', 9);
   text(
-    ctx,
-    'page of',
-    pair(STR.pdfPageOf(pageNumber, totalPages)),
-    P.x1,
-    206.7,
-    'right',
-    GARAMOND,
-    'normal',
-    6.5,
+    ctx, 'page of',
+    t(STR.pdfPageOf(pageNumber, totalPages), lang),
+    A.x1, 256.5, 'right', GARAMOND, 'normal', 9,
   );
 }

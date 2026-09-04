@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Check, QrCode, ShieldCheck } from 'lucide-react';
 import QRScanner from '@/components/LazyQRScanner';
-import { Bilingual, Lang, STR, t } from '@/lib/packageStrings';
+import { Phrase, Lang, STR, t } from '@/lib/packageStrings';
 import { WifError, decodeWif, normalizeKeyInput } from '@/lib/wif';
 import { prefetchPackageAssets } from '@/lib/packagePdf';
 import { WALLET_KINDS, WalletEntry, WalletKindId, walletKind } from '@/lib/walletKinds';
@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 
-const REASONS: Record<WifError, Bilingual> = {
+const REASONS: Record<WifError, Phrase> = {
   notAKey: STR.errNotAKey,
   wrongNetwork: STR.errWrongNetwork,
   checksum: STR.errChecksum,
@@ -28,7 +28,7 @@ interface StepKeysProps {
 
 const StepKeys = ({ lang, entries, onEntryChange, onBack, onNext }: StepKeysProps) => {
   const [scanUid, setScanUid] = useState<string | null>(null);
-  const [scanNotice, setScanNotice] = useState<Bilingual | null>(null);
+  const [scanNotice, setScanNotice] = useState<Phrase | null>(null);
   /** Bumped to remount the scanner after it refuses a scan and stops itself. */
   const [scanAttempt, setScanAttempt] = useState(0);
 
@@ -207,7 +207,7 @@ const StepKeys = ({ lang, entries, onEntryChange, onBack, onNext }: StepKeysProp
                 const inputId = `key-${entry.uid}`;
                 const clashesWith = duplicates.get(entry.uid);
                 const isDuplicate = clashesWith !== undefined;
-                const problem: Bilingual | null = clashesWith
+                const problem: Phrase | null = clashesWith
                   ? STR.errDuplicateAt(rowLabel(clashesWith))
                   : entry.error;
                 const filled = entry.address !== null && !isDuplicate;

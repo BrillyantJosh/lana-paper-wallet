@@ -14,15 +14,29 @@ together with the Complete Package feature itself.
 | `find-white-box.mjs` | The older single-band version of the same search, kept because it is simpler to reason about when an ornament has one obvious clear band. Nothing in this repo depends on its output. |
 | `lana-logo-source.png` | The brand emblem `public/lana-mark.png` was derived from: flattened onto white, forced to solid black ink and trimmed. |
 
-## Re-measuring an ornament
+## Replacing an ornament
+
+Generate a sheet with one complete mandala in the upper half and one small motif
+near the bottom, both entire and touching no edge, then:
 
 ```
-node tools/prep-ornament.mjs raw.png public/ornaments/<id>.png
-node tools/find-content-box.mjs public/ornaments/<id>.png 255 0.012
+sips -Z 3000 --matchTo "/System/Library/ColorSync/Profiles/Generic Gray Profile.icc" \
+     sheet.png --out /tmp/sheet-grey.png
+node tools/split-ornament.mjs /tmp/sheet-grey.png /tmp/out <id> 0.02 234
+sips --resampleWidth 1100 /tmp/out/<id>-crown.png  --out public/ornaments/<id>-crown.png
+sips --resampleWidth 420  /tmp/out/<id>-footer.png --out public/ornaments/<id>-footer.png
+sips --resampleWidth 320 -s format jpeg -s formatOptions 82 \
+     /tmp/out/<id>-crown.png --out src/assets/thumbs/<id>.jpg
 ```
 
-Paste the printed `contentBox` into that kind's entry in `walletKinds.ts`. The
-PDF's own dev-mode guard warns if anything is later drawn outside it.
+Paste the printed aspect ratios into that kind's entry in `walletKinds.ts` — they
+are what lets the piece be drawn to a fixed height without distortion. The fourth
+argument ignores that fraction of each edge, for sheets rendered as a photograph
+of a piece of paper; the fifth is the brightness at which paper starts, and 234
+is firm enough to clear an off-white background.
+
+The PDF's own dev-mode guard warns if anything is later drawn outside the
+writing area.
 
 ## Checking an exported package end to end
 
@@ -34,6 +48,9 @@ supposed to carry — `[{ page, kind, position, address, wif }]`.
 ```
 node tools/verify-pdf-qr.mjs <pagesDir> <expected.json>
 ```
+
+Its two crop windows are hard-coded to where `drawWalletPage` puts the codes. If
+you move them, move these too, or every page reports a mismatch.
 
 ## Checking the key rules
 

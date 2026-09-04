@@ -1,26 +1,40 @@
 /**
- * Every user-facing string lives here, in both languages at once.
+ * Every user-facing string of the Complete Package, in all three languages the
+ * site speaks.
  *
- * The screen shows one language; the printed package shows both, Slovenian
- * leading and English underneath. That is why strings are kept as pairs
- * everywhere instead of being resolved at lookup time — the PDF needs the pair.
+ * Two languages are chosen independently. The SCREEN follows the app's own
+ * language switch. The printed DOCUMENT follows a choice made on step 1, because
+ * the person filling the form and the person the package is for are often not
+ * the same — a Slovenian grandmother making a set for a Hungarian grandchild.
+ * That is why a string is kept as a phrase in every language rather than being
+ * resolved at lookup time.
  */
 
-export type Lang = 'sl' | 'en';
+export type Lang = 'sl' | 'en' | 'hu';
 
-export interface Bilingual {
+export interface Phrase {
   sl: string;
   en: string;
+  hu: string;
 }
 
-export const B = (sl: string, en: string): Bilingual => ({ sl, en });
+export const P = (sl: string, en: string, hu: string): Phrase => ({ sl, en, hu });
 
-export const t = (s: Bilingual, lang: Lang): string => s[lang];
+export const t = (s: Phrase, lang: Lang): string => s[lang];
+
+export const LANGS: { id: Lang; label: string }[] = [
+  { id: 'sl', label: 'Slovenščina' },
+  { id: 'en', label: 'English' },
+  { id: 'hu', label: 'Magyar' },
+];
 
 /**
  * Slovenian counts four ways — one wallet, two wallets, three or four wallets,
  * and five or more. English gets by with two, so a shared `n === 1` test quietly
  * produces "Manjka še 3 ključev", which no Slovene would write.
+ *
+ * Hungarian needs none of this: a noun after a numeral stays singular, so
+ * "3 tárca" is already correct.
  */
 export function sl(n: number, one: string, two: string, few: string, many: string): string {
   const r = n % 100;
@@ -32,125 +46,146 @@ export function sl(n: number, one: string, two: string, few: string, many: strin
 
 const en = (n: number, one: string, many: string): string => (n === 1 ? one : many);
 
-/**
- * The bridge from the app's language to this feature's.
- *
- * The rest of lanapaper.online speaks three languages ('en' | 'sl' | 'hu');
- * the package speaks two, because the printed sheet is set in Slovenian over
- * English and that is a decision about paper, not about the interface.
- *
- * So: 'sl' stays Slovenian, and EVERYTHING ELSE — Hungarian included — is
- * given the English wording. That is a real gap, not a rounding: a Hungarian
- * visitor reads this whole feature in English because it has no Hungarian
- * strings yet. Writing that down here is the only reason anyone will remember
- * to finish it; add 'hu' to Lang and to every entry of STR when the time comes.
- */
+/** The app's language is already one of ours; anything unexpected reads English. */
 export function packageLang(appLanguage: string): Lang {
-  return appLanguage === 'sl' ? 'sl' : 'en';
+  return appLanguage === 'sl' || appLanguage === 'hu' || appLanguage === 'en'
+    ? (appLanguage as Lang)
+    : 'en';
 }
 
 export const STR = {
   // ── Wizard chrome ──────────────────────────────────────────────────────
   /** The name of the feature, in the header of /package. */
-  packageCardTitle: B('Popoln paket', 'Complete package'),
-  stepOf: (n: number, total: number) => B(`Korak ${n} od ${total}`, `Step ${n} of ${total}`),
-  step1Name: B('Kdo in kaj', 'Who and what'),
-  step2Name: B('Ključi', 'Keys'),
-  step3Name: B('Dokument', 'Document'),
-  back: B('Nazaj', 'Back'),
-  next: B('Naprej', 'Continue'),
-  startOver: B('Začni znova', 'Start over'),
-  backToStart: B('Nazaj na začetek', 'Back to the start'),
-  discardConfirm: B(
+  packageCardTitle: P('Popoln paket', 'Complete package', 'Teljes csomag'),
+  stepOf: (n: number, total: number) =>
+    P(`Korak ${n} od ${total}`, `Step ${n} of ${total}`, `${n}. lépés / ${total}`),
+  step1Name: P('Kdo in kaj', 'Who and what', 'Ki és mi'),
+  step2Name: P('Ključi', 'Keys', 'Kulcsok'),
+  step3Name: P('Dokument', 'Document', 'Dokumentum'),
+  back: P('Nazaj', 'Back', 'Vissza'),
+  next: P('Naprej', 'Continue', 'Tovább'),
+  startOver: P('Začni znova', 'Start over', 'Újrakezdés'),
+  backToStart: P('Nazaj na začetek', 'Back to the start', 'Vissza az elejére'),
+  discardConfirm: P(
     'Vse, kar si vpisal, bo izgubljeno. Res nazaj na začetek?',
     'Everything you have entered will be lost. Go back to the start anyway?',
+    'Minden megadott adat elvész. Biztosan visszatér az elejére?',
   ),
 
   // ── Step 1 — who and what ──────────────────────────────────────────────
-  step1Heading: B('Sestavi svoj paket', 'Compose your package'),
-  step1Intro: B(
-    'Vpiši, komu paket pripada, in izberi, katere denarnice naj bodo v njem.',
-    'Say who the package belongs to, then choose which wallets belong in it.',
+  step1Heading: P('Sestavi svoj paket', 'Compose your package', 'Állítsa össze a csomagját'),
+  step1Intro: P(
+    'Vpiši, komu paket pripada, izberi jezik dokumenta in katere denarnice naj bodo v njem.',
+    'Say who the package belongs to, pick the language of the document, and choose which wallets belong in it.',
+    'Adja meg, kié a csomag, válassza ki a dokumentum nyelvét, és hogy mely tárcák kerüljenek bele.',
   ),
-  fullNameLabel: B('Ime in priimek', 'Full name'),
-  fullNamePlaceholder: B('Janez Novak', 'Jane Doe'),
-  fullNameMissing: B('Vpiši ime in priimek.', 'Enter a full name.'),
-  descriptionLabel: B('Opis', 'Description'),
-  descriptionOptional: B('neobvezno', 'optional'),
-  descriptionPlaceholder: B(
+  fullNameLabel: P('Ime in priimek', 'Full name', 'Teljes név'),
+  fullNamePlaceholder: P('Janez Novak', 'Jane Doe', 'Kovács János'),
+  fullNameMissing: P('Vpiši ime in priimek.', 'Enter a full name.', 'Adja meg a teljes nevet.'),
+  descriptionLabel: P('Opis', 'Description', 'Leírás'),
+  descriptionOptional: P('neobvezno', 'optional', 'nem kötelező'),
+  descriptionPlaceholder: P(
     'npr. Družinski prihranki 2026',
     'e.g. Family savings 2026',
+    'pl. Családi megtakarítás 2026',
   ),
-  descriptionHint: B(
+  descriptionHint: P(
     'Kar vpišeš sem, bo natisnjeno na vsaki denarnici v paketu.',
     'Whatever you write here is printed on every wallet in the package.',
+    'Amit ide ír, a csomag minden tárcájára rákerül.',
   ),
 
-  chooseWallets: B('Katere denarnice želiš v paketu?', 'Which wallets do you want in the package?'),
-  chooseWalletsHint: B(
+  // ── Step 1 — the language of the printed document ──────────────────────
+  docLangLabel: P('Jezik dokumenta', 'Language of the document', 'A dokumentum nyelve'),
+  docLangHint: P(
+    'V tem jeziku bo natisnjen paket. Ni nujno isti kot jezik te strani.',
+    'The package is printed in this language. It need not be the language of this page.',
+    'A csomag ezen a nyelven készül. Nem kell megegyeznie az oldal nyelvével.',
+  ),
+
+  chooseWallets: P(
+    'Katere denarnice želiš v paketu?',
+    'Which wallets do you want in the package?',
+    'Mely tárcák kerüljenek a csomagba?',
+  ),
+  chooseWalletsHint: P(
     'Glavno denarnico lahko izbereš samo eno. Lana8Wonder pride vedno kot komplet osmih.',
     'You can hold only one Main Wallet. Lana8Wonder always comes as a set of eight.',
+    'Fő tárcából csak egy lehet. A Lana8Wonder mindig nyolc tárcából álló készlet.',
   ),
-  included: B('V paketu', 'In the package'),
-  notIncluded: B('Ni v paketu', 'Not in the package'),
-  add: B('Dodaj', 'Add'),
-  remove: B('Odstrani', 'Remove'),
-  addOne: B('Dodaj eno', 'Add one'),
-  removeOne: B('Odstrani eno', 'Remove one'),
-  countLabel: B('Število', 'Count'),
-  fixedSet: B('komplet 8 denarnic', 'set of 8 wallets'),
-  onlyOne: B('samo ena', 'only one'),
-  severalAllowed: B('lahko jih je več', 'several allowed'),
+  included: P('V paketu', 'In the package', 'A csomagban'),
+  notIncluded: P('Ni v paketu', 'Not in the package', 'Nincs a csomagban'),
+  add: P('Dodaj', 'Add', 'Hozzáadás'),
+  remove: P('Odstrani', 'Remove', 'Eltávolítás'),
+  addOne: P('Dodaj eno', 'Add one', 'Egyet hozzáad'),
+  removeOne: P('Odstrani eno', 'Remove one', 'Egyet elvesz'),
+  countLabel: P('Število', 'Count', 'Darabszám'),
+  fixedSet: P('komplet 8 denarnic', 'set of 8 wallets', '8 tárcából álló készlet'),
+  onlyOne: P('samo ena', 'only one', 'csak egy'),
+  severalAllowed: P('lahko jih je več', 'several allowed', 'több is lehet'),
 
-  packageEmpty: B(
+  packageEmpty: P(
     'Izberi vsaj eno denarnico.',
     'Choose at least one wallet.',
+    'Válasszon legalább egy tárcát.',
   ),
   packageTooBig: (max: number) =>
-    B(
+    P(
       `V en paket gre največ ${max} ${sl(max, 'denarnica', 'denarnici', 'denarnice', 'denarnic')}.`,
       `A single package holds at most ${max} ${en(max, 'wallet', 'wallets')}.`,
+      `Egy csomagba legfeljebb ${max} tárca fér.`,
     ),
   walletsInPackage: (n: number) =>
-    B(
+    P(
       `${n} ${sl(n, 'denarnica', 'denarnici', 'denarnice', 'denarnic')} v paketu`,
       `${n} ${en(n, 'wallet', 'wallets')} in the package`,
+      `${n} tárca a csomagban`,
     ),
 
   // ── Step 2 — keys ──────────────────────────────────────────────────────
-  step2Heading: B('Vnesi zasebne ključe', 'Enter the private keys'),
-  step2Intro: B(
+  step2Heading: P('Vnesi zasebne ključe', 'Enter the private keys', 'Adja meg a privát kulcsokat'),
+  step2Intro: P(
     'Za vsako denarnico prilepi ali skeniraj njen zasebni ključ (WIF). Naslov denarnice se izračuna sam, tukaj v tvojem brskalniku.',
     'For every wallet, paste or scan its private key (WIF). The wallet address is worked out for you, right here in your browser.',
+    'Minden tárcához illessze be vagy olvassa be a privát kulcsát (WIF). A tárca címét a böngészője számolja ki, itt helyben.',
   ),
-  keyLabel: B('Zasebni ključ (WIF)', 'Private key (WIF)'),
-  keyPlaceholder: B('T…', 'T…'),
-  scan: B('Skeniraj', 'Scan'),
-  addressLabel: B('Naslov denarnice', 'Wallet address'),
+  keyLabel: P('Zasebni ključ (WIF)', 'Private key (WIF)', 'Privát kulcs (WIF)'),
+  keyPlaceholder: P('T…', 'T…', 'T…'),
+  scan: P('Skeniraj', 'Scan', 'Beolvasás'),
+  addressLabel: P('Naslov denarnice', 'Wallet address', 'Tárca címe'),
   progressFilled: (done: number, total: number) =>
-    B(`Izpolnjenih ${done} od ${total}`, `${done} of ${total} filled in`),
-  allFilled: B('Vse denarnice so izpolnjene.', 'Every wallet is filled in.'),
+    P(`Izpolnjenih ${done} od ${total}`, `${done} of ${total} filled in`, `${done} / ${total} kitöltve`),
+  allFilled: P(
+    'Vse denarnice so izpolnjene.',
+    'Every wallet is filled in.',
+    'Minden tárca ki van töltve.',
+  ),
   stillMissing: (n: number) =>
-    B(
+    P(
       `${sl(n, 'Manjka', 'Manjkata', 'Manjkajo', 'Manjka')} še ${n} ${sl(n, 'ključ', 'ključa', 'ključi', 'ključev')}.`,
       `${n} ${en(n, 'key', 'keys')} still missing.`,
+      `Még ${n} kulcs hiányzik.`,
     ),
 
-  errNotAKey: B(
+  errNotAKey: P(
     'To ni videti kot zasebni ključ LanaCoin.',
     'That does not look like a LanaCoin private key.',
+    'Ez nem úgy néz ki, mint egy LanaCoin privát kulcs.',
   ),
-  errWrongNetwork: B(
+  errWrongNetwork: P(
     'Ta ključ ni z omrežja LanaCoin.',
     'This key is not from the LanaCoin network.',
+    'Ez a kulcs nem a LanaCoin hálózatról való.',
   ),
-  errChecksum: B(
+  errChecksum: P(
     'Ključ je nepopoln ali napačno prepisan.',
     'The key is incomplete or mistyped.',
+    'A kulcs hiányos vagy elgépelt.',
   ),
-  errNoCrypto: B(
+  errNoCrypto: P(
     'Brskalnik tukaj ne da dostopa do šifriranja. Odpri stran prek https:// ali na tej napravi.',
     'The browser withholds cryptography here. Open the page over https:// or on this device.',
+    'A böngésző itt nem ad hozzáférést a titkosításhoz. Nyissa meg az oldalt https:// címen vagy ezen az eszközön.',
   ),
   /**
    * Naming the wallet that already holds the key matters more than saying there
@@ -158,63 +193,82 @@ export const STR = {
    * hunting for where.
    */
   errDuplicateAt: (where: string) =>
-    B(
+    P(
       `Ta ključ je v paketu že pri: ${where}.`,
       `This key is already in the package at: ${where}.`,
+      `Ez a kulcs már szerepel a csomagban itt: ${where}.`,
     ),
   /** Shown inside the camera while it keeps looking, so the scan can be redone on the spot. */
   scanDuplicateAt: (where: string) =>
-    B(
+    P(
       `Ta ključ si že poskeniral — je pri: ${where}. Poskeniraj drugo denarnico.`,
       `You have already scanned this key — it is at: ${where}. Scan a different wallet.`,
+      `Ezt a kulcsot már beolvasta — itt van: ${where}. Olvasson be másik tárcát.`,
     ),
   stillDuplicate: (n: number) =>
-    B(
+    P(
       `${n} ${sl(n, 'denarnica ima', 'denarnici imata', 'denarnice imajo', 'denarnic ima')} ključ, ki je v paketu že drugje.`,
       `${n} ${en(n, 'wallet holds a key', 'wallets hold a key')} that is already elsewhere in the package.`,
+      `${n} tárca olyan kulcsot tartalmaz, amely már máshol is szerepel a csomagban.`,
     ),
 
   // ── Step 3 — the document ──────────────────────────────────────────────
-  step3Heading: B('Paket je pripravljen', 'The package is ready'),
-  step3Intro: B(
+  step3Heading: P('Paket je pripravljen', 'The package is ready', 'A csomag elkészült'),
+  step3Intro: P(
     'Preglej povzetek in prenesi dokument. Nastane v tvojem brskalniku — nič ne gre na noben strežnik.',
     'Check the summary and download the document. It is made in your browser — nothing goes to any server.',
+    'Nézze át az összegzést, és töltse le a dokumentumot. A böngészőjében készül — semmi nem kerül szerverre.',
   ),
-  downloadPdf: B('Prenesi PDF', 'Download PDF'),
-  buildingPdf: B('Sestavljam dokument…', 'Building the document…'),
+  downloadPdf: P('Prenesi PDF', 'Download PDF', 'PDF letöltése'),
+  buildingPdf: P('Sestavljam dokument…', 'Building the document…', 'Dokumentum készítése…'),
   pdfPages: (n: number) =>
-    B(`${n} ${sl(n, 'stran', 'strani', 'strani', 'strani')}`, `${n} ${en(n, 'page', 'pages')}`),
-  pdfFailed: B('Dokumenta ni bilo mogoče sestaviti.', 'The document could not be built.'),
-  printHint: B(
+    P(
+      `${n} ${sl(n, 'stran', 'strani', 'strani', 'strani')}`,
+      `${n} ${en(n, 'page', 'pages')}`,
+      `${n} oldal`,
+    ),
+  pdfFailed: P(
+    'Dokumenta ni bilo mogoče sestaviti.',
+    'The document could not be built.',
+    'A dokumentumot nem sikerült elkészíteni.',
+  ),
+  printHint: P(
     'Tiskaj na A4, brez prilagajanja velikosti (100 %), po možnosti na debelejši papir.',
     'Print on A4 at 100 % scale, with no shrink-to-fit, ideally on heavier paper.',
+    'Nyomtassa A4-re, 100%-os méretben, méretre igazítás nélkül, lehetőleg vastagabb papírra.',
   ),
 
   // ── Safety ─────────────────────────────────────────────────────────────
-  localOnly: B(
+  localOnly: P(
     'Vse se zgodi v tvojem brskalniku. Noben ključ ne zapusti te naprave.',
     'Everything happens in your browser. No key ever leaves this device.',
+    'Minden a böngészőjében történik. Egyetlen kulcs sem hagyja el ezt az eszközt.',
   ),
-  keySafety: B(
+  keySafety: P(
     'Kdor ima zasebni ključ, ima denar. Ta dokument hrani tako, kot bi hranil gotovino.',
     'Whoever holds the private key holds the money. Keep this document as you would keep cash.',
+    'Akinél a privát kulcs van, azé a pénz. Őrizze ezt a dokumentumot úgy, mint a készpénzt.',
   ),
 
   // ── Printed document ───────────────────────────────────────────────────
-  pdfCoverTitle: B('Papirnate denarnice', 'Paper Wallets'),
-  pdfCoverOwner: B('Paket pripada', 'This package belongs to'),
-  pdfCoverContents: B('Vsebina paketa', 'Contents of the package'),
-  pdfCoverIssued: B('Izdano', 'Issued'),
-  pdfWalletAddress: B('Naslov denarnice', 'Wallet address'),
-  pdfPrivateKey: B('Zasebni ključ', 'Private key'),
-  pdfScanToReceive: B('Skeniraj za prejem', 'Scan to receive'),
-  pdfScanToSpend: B('Skeniraj za razpolaganje', 'Scan to spend'),
+  pdfCoverTitle: P('Papirnate denarnice', 'Paper Wallets', 'Papír tárcák'),
+  pdfCoverOwner: P('Paket pripada', 'This package belongs to', 'A csomag tulajdonosa'),
+  pdfCoverContents: P('Vsebina paketa', 'Contents of the package', 'A csomag tartalma'),
+  pdfCoverIssued: P('Izdano', 'Issued', 'Kiállítva'),
+  pdfWalletAddress: P('Naslov denarnice', 'Wallet address', 'Tárca címe'),
+  pdfPrivateKey: P('Zasebni ključ', 'Private key', 'Privát kulcs'),
+  pdfScanToReceive: P('Skeniraj za prejem', 'Scan to receive', 'Olvassa be a fogadáshoz'),
+  pdfScanToSpend: P('Skeniraj za razpolaganje', 'Scan to spend', 'Olvassa be a költéshez'),
   pdfPositionOf: (n: number, total: number) =>
-    B(`${n} od ${total}`, `${n} of ${total}`),
+    P(`${n} od ${total}`, `${n} of ${total}`, `${n} / ${total}`),
   pdfPageOf: (n: number, total: number) =>
-    B(`Stran ${n} od ${total}`, `Page ${n} of ${total}`),
-  pdfFooter: B('lanapaper.online', 'lanapaper.online'),
+    P(`Stran ${n} od ${total}`, `Page ${n} of ${total}`, `${n}. oldal / ${total}`),
+  pdfFooter: P('lanapaper.online', 'lanapaper.online', 'lanapaper.online'),
 
   // ── On lanapaper.online's own landing page ─────────────────────────────
-  packageBack: B('Nazaj na lanapaper.online', 'Back to lanapaper.online'),
+  packageBack: P(
+    'Nazaj na lanapaper.online',
+    'Back to lanapaper.online',
+    'Vissza a lanapaper.online oldalra',
+  ),
 } as const;

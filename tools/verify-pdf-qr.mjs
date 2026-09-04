@@ -84,8 +84,11 @@ const PAGE_W = 210, PAGE_H = 297;
 const win = (x, y, w, h, pad = 4) => [
   (x - pad) / PAGE_W, (y - pad) / PAGE_H, (w + pad * 2) / PAGE_W, (h + pad * 2) / PAGE_H,
 ];
-const ADDRESS_WINDOW = win(61.35, 155.2, 24.5, 24.5);
-const KEY_WINDOW = win(110.3, 155.2, 30.0, 30.0);
+// Kept in step with drawWalletPage in src/lib/packagePdf.ts: the address code
+// is ADDR_QR wide centred on A.leftCx, the key code KEY_QR on A.rightCx, both
+// with their top at QR_TOP.
+const ADDRESS_WINDOW = win(60 - 58 / 2, 161, 58, 58);
+const KEY_WINDOW = win(150 - 70 / 2, 161, 70, 70);
 
 const [dir, expectedPath] = process.argv.slice(2);
 if (!dir || !expectedPath) {

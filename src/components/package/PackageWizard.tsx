@@ -19,7 +19,17 @@ interface PackageWizardProps {
 const TOTAL_STEPS = 3;
 const STEP_NAMES = [STR.step1Name, STR.step2Name, STR.step3Name];
 
-const emptyDraft = (): PackageDraft => ({ fullName: '', description: '', counts: {} });
+/**
+ * The document starts out in the language of the screen, because that is the
+ * likeliest answer — but it is a separate choice, made on step 1: a package is
+ * often made for somebody who does not read the language you are reading now.
+ */
+const emptyDraft = (lang: Lang): PackageDraft => ({
+  fullName: '',
+  description: '',
+  docLang: lang,
+  counts: {},
+});
 
 /**
  * Owns the whole flow. Every private key the person types lives in this
@@ -28,7 +38,7 @@ const emptyDraft = (): PackageDraft => ({ fullName: '', description: '', counts:
  */
 const PackageWizard = ({ lang, onExit, onDirtyChange }: PackageWizardProps) => {
   const [step, setStep] = useState(1);
-  const [draft, setDraft] = useState<PackageDraft>(emptyDraft);
+  const [draft, setDraft] = useState<PackageDraft>(() => emptyDraft(lang));
   const [entries, setEntries] = useState<WalletEntry[]>([]);
 
   const dirty =
@@ -43,9 +53,9 @@ const PackageWizard = ({ lang, onExit, onDirtyChange }: PackageWizardProps) => {
 
   const reset = useCallback(() => {
     setEntries([]);
-    setDraft(emptyDraft());
+    setDraft(emptyDraft(lang));
     setStep(1);
-  }, []);
+  }, [lang]);
 
   const handleExit = useCallback(() => {
     reset();
