@@ -261,9 +261,6 @@ export const STR = {
   pdfScanToSpend: P('Skeniraj za razpolaganje', 'Scan to spend', 'Olvassa be a költéshez'),
   pdfPositionOf: (n: number, total: number) =>
     P(`${n} od ${total}`, `${n} of ${total}`, `${n} / ${total}`),
-  pdfPageOf: (n: number, total: number) =>
-    P(`Stran ${n} od ${total}`, `Page ${n} of ${total}`, `${n}. oldal / ${total}`),
-  pdfFooter: P('lanapaper.online', 'lanapaper.online', 'lanapaper.online'),
 
   // ── On lanapaper.online's own landing page ─────────────────────────────
   packageBack: P(

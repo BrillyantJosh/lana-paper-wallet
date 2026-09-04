@@ -369,8 +369,6 @@ export async function buildPackagePdf(input: PackagePdfInput): Promise<Blob> {
     return data;
   };
 
-  const totalPages = packagePageCount(entries);
-
   drawCover(doc, lang, draft, counts, usedKinds.map((k) => k.id), issuedOn, asset);
 
   for (let i = 0; i < entries.length; i++) {
@@ -381,8 +379,6 @@ export async function buildPackagePdf(input: PackagePdfInput): Promise<Blob> {
       draft,
       entries[i],
       counts[entries[i].kind] ?? 1,
-      i + 2,
-      totalPages,
       asset,
     );
   }
@@ -468,7 +464,6 @@ function drawCover(
   const safety = twoLines(doc, t(STR.keySafety, lang), GARAMOND, 'normal', 10, 9, C.w);
   if (safety.lines[0]) text(ctx, 'cover safety L1', safety.lines[0], C.cx, 245, 'center', GARAMOND, 'normal', safety.size);
   if (safety.lines[1]) text(ctx, 'cover safety L2', safety.lines[1], C.cx, 250, 'center', GARAMOND, 'normal', safety.size);
-  text(ctx, 'cover footer', t(STR.pdfFooter, lang), C.cx, 257, 'center', GARAMOND, 'normal', 9);
 }
 
 /* ── a wallet page ─────────────────────────────────────────────────────── */
@@ -479,8 +474,6 @@ async function drawWalletPage(
   draft: PackageDraft,
   entry: WalletEntry,
   countOfKind: number,
-  pageNumber: number,
-  totalPages: number,
   asset: AssetFn,
 ): Promise<void> {
   const kind = walletKind(entry.kind);
@@ -555,12 +548,9 @@ async function drawWalletPage(
   text(ctx, 'wif line 2', k2, A.rightCx, QR_TOP + KEY_QR + 15.5, 'center', MONO, 'normal', 12);
 
   // ── the small print ─────────────────────────────────────────────────
+  // The one line that has to be here. There is deliberately no page number and
+  // no site name: these sheets get separated, folded and kept apart, so "3 of 9"
+  // describes a stack that will not exist for long.
   const safety = fitOneLine(doc, t(STR.keySafety, lang), GARAMOND, 'normal', 9.5, A.x1 - A.x0, 7);
-  text(ctx, 'safety', safety.text, A.cx, 252, 'center', GARAMOND, 'normal', safety.size);
-  text(ctx, 'footer', t(STR.pdfFooter, lang), A.x0, 256.5, 'left', GARAMOND, 'normal', 9);
-  text(
-    ctx, 'page of',
-    t(STR.pdfPageOf(pageNumber, totalPages), lang),
-    A.x1, 256.5, 'right', GARAMOND, 'normal', 9,
-  );
+  text(ctx, 'safety', safety.text, A.cx, 253, 'center', GARAMOND, 'normal', safety.size);
 }
