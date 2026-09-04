@@ -16,6 +16,24 @@ const ec = new elliptic.ec('secp256k1');
  * They are exported so nothing has to re-type the numbers.
  */
 export const LANA_WIF_VERSION = 0xb0;
+/**
+ * The other container the Lana fleet actually emits.
+ *
+ * LanaCoin's own src/chainparams.cpp sets SECRET_KEY = 176 (0xB0), and nothing
+ * in the coin knows about 0x41. But 100Million2Everyone encodes every wallet it
+ * creates as 0x41 + key + 0x01, and derives the address from the compressed
+ * public key over version 0x30 exactly as this file does — so the key inside is
+ * a real LanaCoin key and the address is a real LanaCoin address. Only the
+ * envelope is non-standard; a 0x41 WIF is 52 characters and starts with 'A'
+ * rather than 'T'.
+ *
+ * Refusing it would mean refusing keys people are holding, so it is read. It is
+ * never WRITTEN: generateNewWallet emits 0xB0, the form LanaCoin core imports.
+ */
+export const LANA_WIF_VERSION_100M = 0x41;
+
+/** Every container a LanaCoin private key is known to arrive in. */
+export const LANA_WIF_VERSIONS = [LANA_WIF_VERSION, LANA_WIF_VERSION_100M];
 export const LANA_ADDRESS_VERSION = 0x30;
 
 /** The two version bytes as the two hex characters they occupy in a payload. */
@@ -199,7 +217,7 @@ export async function wifToPrivateKey(wif: string): Promise<WifDecodeResult> {
     // 5. Verify LanaCoin prefix — accept BOTH formats
     //    0xB0 = old uncompressed (altcoin convention: 0x30 + 0x80)
     //    0x41 = new compressed (from chainparams.cpp SECRET_KEY=65)
-    if (payload[0] !== LANA_WIF_VERSION && payload[0] !== 0x41) {
+    if (!LANA_WIF_VERSIONS.includes(payload[0])) {
       throw new Error('Invalid LANA WIF prefix - expected 0xB0 or 0x41, got 0x' + payload[0].toString(16));
     }
 

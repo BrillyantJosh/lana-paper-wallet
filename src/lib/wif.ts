@@ -5,7 +5,7 @@ import {
   generateLanaAddress,
   sha256,
   tryBase58Decode,
-  LANA_WIF_VERSION,
+  LANA_WIF_VERSIONS,
 } from '@/lib/crypto';
 
 const ec = new elliptic.ec('secp256k1');
@@ -85,7 +85,10 @@ export async function decodeWif(input: string): Promise<DecodedKey> {
   const actual = (await sha256(await sha256(bytesToHex(body)))).substring(0, 8);
   if (actual !== expected) return { ok: false, reason: 'checksum' };
 
-  if (bytes[0] !== LANA_WIF_VERSION) return { ok: false, reason: 'wrongNetwork' };
+  // Two containers, one coin: 0xB0 is what LanaCoin core writes, 0x41 is what
+  // 100Million2Everyone writes. Both hold a real key over a real 0x30 address —
+  // see LANA_WIF_VERSIONS. Anything else genuinely is another chain.
+  if (!LANA_WIF_VERSIONS.includes(bytes[0])) return { ok: false, reason: 'wrongNetwork' };
 
   const privateKeyHex = bytesToHex(bytes.subarray(1, 33));
   const priv = BigInt('0x' + privateKeyHex);

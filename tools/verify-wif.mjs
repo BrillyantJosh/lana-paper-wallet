@@ -47,6 +47,9 @@ const shipped = await import(SRC + 'lib/wif.ts');
 const ec = new elliptic.ec('secp256k1');
 
 const LANA_WIF_VERSION = 0xb0;
+/** What 100Million2Everyone writes: a real Lana key in a non-standard envelope. */
+const LANA_WIF_VERSION_100M = 0x41;
+const LANA_WIF_VERSIONS = [LANA_WIF_VERSION, LANA_WIF_VERSION_100M];
 const LANA_ADDRESS_VERSION = 0x30;
 const BITCOIN_WIF_VERSION = 0x80;
 const SECP256K1_N = BigInt('0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141');
@@ -145,7 +148,7 @@ function decodeWif(input) {
     return { ok: false, reason: 'checksum' };
   }
 
-  if (bytes[0] !== LANA_WIF_VERSION) return { ok: false, reason: 'wrongNetwork' };
+  if (!LANA_WIF_VERSIONS.includes(bytes[0])) return { ok: false, reason: 'wrongNetwork' };
 
   const privHex = toHex(bytes.subarray(1, 33));
   const priv = BigInt('0x' + privHex);
@@ -246,6 +249,22 @@ for (const privHex of keys.slice(0, 6)) {
     res.ok ? 'accepted!' : res.reason);
 }
 
+console.log('a wallet from 100Million2Everyone is the same money in another envelope');
+for (const privHex of keys.slice(0, 8)) {
+  // Exactly what 100Million2Everyone/src/utils/walletGenerator.ts encodeWIF does.
+  const m100 = decodeWif(encodeWif(privHex, true, LANA_WIF_VERSION_100M));
+  const std = decodeWif(encodeWif(privHex, true, LANA_WIF_VERSION));
+  check('0x41 wallet accepted', m100.ok, m100.ok ? '' : m100.reason);
+  check('0x41 and 0xB0 give the same address', m100.ok && std.ok && m100.address === std.address,
+    m100.ok && std.ok ? `${m100.address} vs ${std.address}` : 'one of them failed');
+  // The duplicate check in the package compares keyId, so one key offered in both
+  // envelopes has to look like one key.
+  check('0x41 and 0xB0 share a keyId', m100.ok && std.ok && m100.keyId === std.keyId);
+  check('0x41 wallets are 52 characters starting with A',
+    m100.wif.length === 52 && m100.wif.startsWith('A'), `${m100.wif.length} chars, '${m100.wif[0]}'`);
+  check('0xB0 wallets still start with T', std.wif.startsWith('T'));
+}
+
 console.log('the key fingerprint follows the secret, not the encoding');
 for (const privHex of keys.slice(0, 8)) {
   const c = decodeWif(encodeWif(privHex, true));
@@ -336,6 +355,9 @@ console.log('the shipped src/lib/wif.ts agrees, case for case');
   const corpus = [];
   for (const privHex of keys) {
     corpus.push(encodeWif(privHex, true), encodeWif(privHex, false));
+    // Both envelopes, and one from another chain for contrast.
+    corpus.push(encodeWif(privHex, true, LANA_WIF_VERSION_100M));
+    corpus.push(encodeWif(privHex, false, LANA_WIF_VERSION_100M));
     corpus.push(encodeWif(privHex, true, BITCOIN_WIF_VERSION));
   }
   for (const privHex of ['0'.repeat(64), SECP256K1_N.toString(16), (SECP256K1_N + 1n).toString(16)]) {
