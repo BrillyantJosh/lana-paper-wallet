@@ -207,6 +207,46 @@ for (const privHex of keys) {
     un.ok ? un.address : un.reason);
 }
 
+console.log('every shape the fleet writes, and the address each one means');
+/**
+ * Swept across ~/Desktop/LanaDev on 2026-09-04: every app in the fleet writes
+ * one of exactly two version bytes, 0xB0 or 0x41, and checks for exactly those
+ * two. There is no third envelope. Compression decides the address, in this
+ * module and in MejmoSeFajn alike — a compressed WIF means the compressed
+ * address, an uncompressed one means the uncompressed address.
+ */
+const FORMS = [
+  { label: 'T… 0xB0 compressed (lanapaper, MejmoSeFajn staking)', version: LANA_WIF_VERSION,      compressed: true,  first: 'T', length: 52 },
+  { label: '6… 0xB0 uncompressed (MejmoSeFajn "Dominate")',       version: LANA_WIF_VERSION,      compressed: false, first: '6', length: 51 },
+  { label: 'A… 0x41 compressed (100Million2Everyone)',            version: LANA_WIF_VERSION_100M, compressed: true,  first: 'A', length: 52 },
+  { label: '3… 0x41 uncompressed (nothing writes this, but it decodes)',
+                                                                  version: LANA_WIF_VERSION_100M, compressed: false, first: '3', length: 51 },
+];
+for (const privHex of keys.slice(0, 8)) {
+  const want = {
+    true: address(publicKey(privHex, true)),
+    false: address(publicKey(privHex, false)),
+  };
+  for (const f of FORMS) {
+    const wif = encodeWif(privHex, f.compressed, f.version);
+    const res = decodeWif(wif);
+    check(`${f.label}: accepted`, res.ok, res.ok ? '' : res.reason);
+    check(`${f.label}: starts '${f.first}', ${f.length} chars`,
+      wif[0] === f.first && wif.length === f.length, `'${wif[0]}', ${wif.length}`);
+    check(`${f.label}: the address its compression means`,
+      res.ok && res.address === want[String(f.compressed)],
+      res.ok ? res.address : res.reason);
+  }
+  // The two compressed envelopes are the same wallet; the uncompressed ones are
+  // a different address of the same secret.
+  const t = decodeWif(encodeWif(privHex, true, LANA_WIF_VERSION));
+  const a = decodeWif(encodeWif(privHex, true, LANA_WIF_VERSION_100M));
+  const six = decodeWif(encodeWif(privHex, false, LANA_WIF_VERSION));
+  check('T… and A… are the same wallet', t.address === a.address);
+  check('6… is a different address of the same secret',
+    six.address !== t.address && six.keyId === t.keyId);
+}
+
 console.log('a single mistyped character is always caught');
 let corruptions = 0;
 for (const privHex of keys.slice(0, 4)) {
