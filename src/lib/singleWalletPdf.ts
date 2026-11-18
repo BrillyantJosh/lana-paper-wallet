@@ -22,8 +22,8 @@ import {
  *             Built in Results.tsx, not here.
  *  mandala  – the engraved sheet of the Complete Package. With the Nostr data
  *             chosen, a second engraved sheet carries the two Nostr HEX codes.
- *  a4 / a5  – the wallet only (address + private key), no ornament, and what
- *             the wallet is for written large across the top.
+ *  a4 / a5  – the wallet only: what it is for in large type and the address
+ *             code. No private key — a sign to pay into, not a backup.
  */
 export type PrintTemplate = 'classic' | 'mandala' | 'a4' | 'a5';
 
@@ -43,9 +43,9 @@ export const TEMPLATE_STR = {
   ),
   a4: P('A4 – samo denarnica', 'A4 – wallet only', 'A4 – csak a tárca'),
   a4Desc: P(
-    'Naslov in ključ, zgoraj z velikimi črkami, čemu denarnica služi.',
-    'Address and key, with what the wallet is for in large type above.',
-    'Cím és kulcs, felül nagy betűkkel, mire szolgál a tárca.',
+    'Velik napis, čemu denarnica služi, in QR koda za plačilo nanjo. Brez zasebnega ključa.',
+    'What the wallet is for in large type, and the code to pay into it. No private key.',
+    'Nagy betűkkel, mire szolgál a tárca, és a befizetés kódja. Privát kulcs nélkül.',
   ),
   a5: P('A5 – samo denarnica', 'A5 – wallet only', 'A5 – csak a tárca'),
   a5Desc: P(
@@ -65,15 +65,15 @@ export const TEMPLATE_STR = {
     'pl. Megtakarítás a házra',
   ),
   purposeHint: P(
-    'Če pustiš prazno, se izpiše opis vrste denarnice.',
-    'Left empty, the description of the wallet type is printed.',
-    'Üresen hagyva a tárcatípus leírása kerül rá.',
+    'Če pustiš prazno, se izpiše ime vrste denarnice.',
+    'Left empty, the name of the wallet type is printed.',
+    'Üresen hagyva a tárcatípus neve kerül rá.',
   ),
   descriptionLabel: P('Opis pod imenom (neobvezno)', 'Description under the name (optional)', 'Leírás a név alatt (nem kötelező)'),
   walletOnlyNote: P(
-    'Ta predloga vsebuje samo naslov in zasebni ključ denarnice — Nostr podatkov ni na njej.',
-    'This template carries only the wallet address and private key — the Nostr data is not on it.',
-    'Ez a sablon csak a tárca címét és privát kulcsát tartalmazza — a Nostr adatok nincsenek rajta.',
+    'Na listu sta samo napis in QR koda naslova denarnice. Zasebnega ključa NI — ta list ni varnostna kopija.',
+    'The sheet carries only the text and the wallet address code. There is NO private key — it is not a backup.',
+    'A lapon csak a felirat és a tárca címének kódja van. Privát kulcs NINCS rajta — ez nem biztonsági másolat.',
   ),
   mandalaNostrNote: P(
     'Nostr HEX ID in Nostr zasebni ključ (HEX) sta na drugem listu.',
@@ -196,11 +196,14 @@ async function drawMandala(doc: jsPDF, input: SingleWalletPdfInput): Promise<voi
   text(doc, safety.text, 105, 257, GARAMOND, 'normal', safety.size);
 }
 
-/* ── A4 / A5: the wallet only, its purpose in large type ──────────────── */
+/* ── A4 / A5: the wallet only — its purpose and its address code ──────── */
 
 /**
- * Laid out once in A4 millimetres; A5 is the same sheet scaled by 148/210, so
- * both keep exactly the same proportions.
+ * A sign, not a backup: what the wallet is for, in large type, and the code to
+ * pay into it. Nothing else — above all no private key, so the sheet can hang
+ * on a wall or go to whoever should send money to this wallet.
+ *
+ * Laid out once in A4 millimetres; A5 is the same sheet scaled by 148/210.
  */
 async function drawWalletOnly(doc: jsPDF, input: SingleWalletPdfInput, k: number): Promise<void> {
   const lang = input.lang;
@@ -209,28 +212,14 @@ async function drawWalletOnly(doc: jsPDF, input: SingleWalletPdfInput, k: number
   const cx = m(105);
   const W = m(170);
 
-  // ── what kind of wallet ────────────────────────────────────────────
-  const name = fitOneLine(doc, t(kind.name, lang), GARAMOND, 'bold', 22 * k, W, 12 * k);
-  text(doc, name.text, cx, m(28), GARAMOND, 'bold', name.size);
+  // With nothing written, the wallet type's name stands in.
+  const big = input.purpose.trim() || t(kind.name, lang);
 
-  const own = input.purpose.trim();
-  // With no purpose written, the kind's own tagline becomes the large text, and
-  // is not repeated small above it.
-  const big = own || t(kind.tagline, lang);
-  if (own) {
-    const tagline = fitOneLine(doc, t(kind.tagline, lang), GARAMOND, 'normal', 12 * k, W, 8 * k);
-    text(doc, tagline.text, cx, m(37), GARAMOND, 'normal', tagline.size);
-  }
-  doc.setLineWidth(0.4 * k);
-  doc.line(m(40), m(45), m(170), m(45));
-
-  // ── what it is for, as large as fits ───────────────────────────────
-  // Up to four lines between the rule and the codes; the size steps down until
-  // the whole text fits, and only at the floor is the last line cut.
-  const BOX_TOP = m(50), BOX_BOTTOM = m(138);
-  let size = 34 * k;
-  const floor = 16 * k;
+  // ── the text, as large as fits ─────────────────────────────────────
+  const BOX_TOP = m(22), BOX_BOTTOM = m(112);
   const PT = 0.352778;
+  const floor = 18 * k;
+  let size = 40 * k;
   let lines: string[] = [];
   for (;;) {
     doc.setFont(GARAMOND, 'bold');
@@ -247,36 +236,19 @@ async function drawWalletOnly(doc: jsPDF, input: SingleWalletPdfInput, k: number
     lines[3] = last + '…';
   }
   const lh = size * PT * 1.22;
-  const blockH = lines.length * lh;
-  // Centred in the box: the first baseline sits one cap height below the top of
-  // the block.
-  let y = BOX_TOP + (BOX_BOTTOM - BOX_TOP - blockH) / 2 + size * PT * 0.9;
+  let y = BOX_TOP + (BOX_BOTTOM - BOX_TOP - lines.length * lh) / 2 + size * PT * 0.9;
   for (const line of lines) {
     text(doc, line, cx, y, GARAMOND, 'bold', size);
     y += lh;
   }
 
-  // ── the two codes ──────────────────────────────────────────────────
-  await drawCodePair(doc, lang, {
-    x: m,
-    pt: (v) => v * k,
-    leftX0: m(20),
-    leftCx: m(59),
-    rightX0: m(112),
-    rightCx: m(151),
-    colW: m(78),
-    barY: m(146),
-    hintY: m(163),
-    qrTop: m(167),
-    leftQr: m(58),
-    rightQr: m(70),
-    left: { caption: STR.pdfWalletAddress, hint: STR.pdfScanToReceive, value: input.address, level: 'M', split: 17, mono: 12 },
-    right: { caption: STR.pdfPrivateKey, hint: STR.pdfScanToSpend, value: input.wif, level: 'Q', split: 26, mono: 12 },
-    alias: 'wallet',
-  });
-
-  const safety = fitOneLine(doc, t(STR.keySafety, lang), GARAMOND, 'normal', 10 * k, W, 7 * k);
-  text(doc, safety.text, cx, m(268), GARAMOND, 'normal', safety.size);
+  // ── the address code, large, and the address under it ──────────────
+  const QR = m(120);
+  const QR_TOP = m(126);
+  const code = await qr(input.address, 'M');
+  doc.addImage(code, 'PNG', cx - QR / 2, QR_TOP, QR, QR, 'qr-address', 'FAST');
+  const addr = fitOneLine(doc, input.address, MONO, 'normal', 14 * k, W, 8 * k);
+  text(doc, addr.text, cx, QR_TOP + QR + m(14), MONO, 'normal', addr.size);
 }
 
 /* ── shared pieces ─────────────────────────────────────────────────────── */
