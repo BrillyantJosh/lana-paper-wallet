@@ -14,6 +14,14 @@ import { useToast } from '@/hooks/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { translations } from '@/lib/translations';
+import { t as tp } from '@/lib/packageStrings';
+import { WALLET_KINDS, type WalletKindId } from '@/lib/walletKinds';
+import {
+  TEMPLATE_STR,
+  buildSingleWalletPdf,
+  singleWalletFileName,
+  type PrintTemplate,
+} from '@/lib/singleWalletPdf';
 
 interface ResultsState {
   result: ConversionResult;
@@ -29,6 +37,9 @@ const Results = () => {
   
   const state = location.state as ResultsState | null;
   const [customText, setCustomText] = React.useState('');
+  const [template, setTemplate] = React.useState<PrintTemplate>('classic');
+  const [walletKindId, setWalletKindId] = React.useState<WalletKindId>('wallet');
+  const [building, setBuilding] = React.useState(false);
 
   // Redirect if no data
   React.useEffect(() => {
@@ -91,6 +102,40 @@ const Results = () => {
         title: t.toasts.copyFailed,
         description: t.toasts.copyFailedDesc,
       });
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (template === 'classic') return;
+    setBuilding(true);
+    try {
+      const blob = await buildSingleWalletPdf({
+        template,
+        lang: language,
+        kind: walletKindId,
+        wif: normalizePrivateKey(wifInput),
+        address: walletId,
+        purpose: customText,
+        nostr:
+          template === 'mandala' && showNostrData
+            ? { hexId: result.nostrHexId, privateKeyHex: result.privateKeyHex }
+            : undefined,
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = singleWalletFileName(template);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      // The blob holds the private key: gone after a minute, which is long
+      // enough for every browser to have taken the file.
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      console.error(err);
+      toast({ variant: 'destructive', title: tp(TEMPLATE_STR.failed, language) });
+    } finally {
+      setBuilding(false);
     }
   };
 
@@ -529,33 +574,111 @@ const Results = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Template */}
             <div className="space-y-2">
-              <Label htmlFor="custom-text">{t.print.customTextLabel}</Label>
+              <Label>{tp(TEMPLATE_STR.heading, language)}</Label>
+              <div className="grid gap-2 sm:grid-cols-2" role="radiogroup">
+                {(['classic', 'mandala', 'a4', 'a5'] as PrintTemplate[]).map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={template === id}
+                    onClick={() => setTemplate(id)}
+                    className={`text-left rounded-lg border p-3 transition-colors ${
+                      template === id
+                        ? 'border-primary bg-primary/10 ring-1 ring-primary'
+                        : 'border-border bg-background/50 hover:border-primary/50'
+                    }`}
+                  >
+                    <div className="font-semibold text-foreground">{tp(TEMPLATE_STR[id], language)}</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {tp(TEMPLATE_STR[`${id}Desc` as const], language)}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Wallet type — names the sheet and picks its mandala */}
+            {template !== 'classic' && (
+              <div className="space-y-2">
+                <Label>{tp(TEMPLATE_STR.kindLabel, language)}</Label>
+                <div className="flex flex-wrap gap-2">
+                  {WALLET_KINDS.map((k) => (
+                    <Button
+                      key={k.id}
+                      type="button"
+                      size="sm"
+                      variant={walletKindId === k.id ? 'default' : 'outline'}
+                      onClick={() => setWalletKindId(k.id)}
+                    >
+                      {tp(k.name, language)}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="custom-text">
+                {template === 'classic'
+                  ? t.print.customTextLabel
+                  : template === 'mandala'
+                    ? tp(TEMPLATE_STR.descriptionLabel, language)
+                    : tp(TEMPLATE_STR.purposeLabel, language)}
+              </Label>
               <Textarea
                 id="custom-text"
-                placeholder={t.print.customTextPlaceholder}
+                placeholder={
+                  template === 'a4' || template === 'a5'
+                    ? tp(TEMPLATE_STR.purposePlaceholder, language)
+                    : t.print.customTextPlaceholder
+                }
                 value={customText}
                 onChange={(e) => setCustomText(e.target.value)}
                 rows={3}
                 className="resize-none"
               />
+              {(template === 'a4' || template === 'a5') && (
+                <p className="text-xs text-muted-foreground">{tp(TEMPLATE_STR.purposeHint, language)}</p>
+              )}
             </div>
 
             <p className="text-sm text-muted-foreground">
-              {showNostrData
-                ? t.print.fiveCards
-                : t.print.twoCards}
+              {template === 'classic'
+                ? showNostrData
+                  ? t.print.fiveCards
+                  : t.print.twoCards
+                : template === 'mandala'
+                  ? showNostrData
+                    ? tp(TEMPLATE_STR.mandalaNostrNote, language)
+                    : t.print.twoCards
+                  : tp(TEMPLATE_STR.walletOnlyNote, language)}
             </p>
 
-            <Button 
-              onClick={handlePrint}
-              variant="hero"
-              size="lg"
-              className="w-full"
-            >
-              <Printer className="h-4 w-4 mr-2" />
-              {t.print.printButton || 'Natisni'}
-            </Button>
+            {template === 'classic' ? (
+              <Button
+                onClick={handlePrint}
+                variant="hero"
+                size="lg"
+                className="w-full"
+              >
+                <Printer className="h-4 w-4 mr-2" />
+                {t.print.printButton || 'Natisni'}
+              </Button>
+            ) : (
+              <Button
+                onClick={handleDownloadPdf}
+                disabled={building}
+                variant="hero"
+                size="lg"
+                className="w-full"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {building ? tp(TEMPLATE_STR.building, language) : tp(TEMPLATE_STR.download, language)}
+              </Button>
+            )}
 
             <Alert className="bg-amber-50 border-amber-200">
               <AlertCircle className="h-4 w-4 text-amber-600" />

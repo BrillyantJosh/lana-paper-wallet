@@ -168,7 +168,7 @@ function image(
  * Steps the size down by 0.5 pt until the string fits, never below the floor,
  * then truncates with an ellipsis. The baseline never moves.
  */
-function fitOneLine(
+export function fitOneLine(
   doc: jsPDF,
   content: string,
   family: string,
@@ -191,7 +191,7 @@ function fitOneLine(
 }
 
 /** Two lines at most, ever — the description is a caption, not a letter. */
-function twoLines(
+export function twoLines(
   doc: jsPDF,
   content: string,
   family: string,
@@ -220,7 +220,7 @@ function twoLines(
  * Fixed character offsets, not measured widths, so the break sits in the same
  * place on every page in a stack. Nothing is drawn at the break.
  */
-function splitAt(s: string, at: number): [string, string] {
+export function splitAt(s: string, at: number): [string, string] {
   const cut = s.length === at * 2 ? at : Math.ceil(s.length / 2);
   return [s.slice(0, cut), s.slice(cut)];
 }
@@ -239,7 +239,7 @@ const MARK_ASPECT = 180 / 212;
  */
 const assets = new Map<string, Promise<string>>();
 
-function loadAsset(url: string): Promise<string> {
+export function loadAsset(url: string): Promise<string> {
   let pending = assets.get(url);
   if (!pending) {
     pending = (async () => {
@@ -268,7 +268,7 @@ function loadAsset(url: string): Promise<string> {
  * space, and the prize for losing is one wallet's code printed beside another
  * wallet's ink.
  */
-function qr(content: string, level: 'M' | 'Q'): Promise<string> {
+export function qr(content: string, level: 'M' | 'Q'): Promise<string> {
   return QRCode.toDataURL(content, {
     errorCorrectionLevel: level,
     margin: 0,
@@ -388,17 +388,17 @@ export async function buildPackagePdf(input: PackagePdfInput): Promise<Blob> {
 
 /* ── the engraving ─────────────────────────────────────────────────────── */
 
-type AssetFn = (url: string) => string;
+export type AssetFn = (url: string) => string;
 
 /** Centred at the top of the sheet, drawn to a fixed height whatever its shape. */
-function drawCrown(doc: jsPDF, orn: Ornament, asset: AssetFn, alias: string): void {
+export function drawCrown(doc: jsPDF, orn: Ornament, asset: AssetFn, alias: string): void {
   const h = CROWN.h;
   const w = h * orn.aspect;
   doc.addImage(asset(orn.url), 'PNG', PAGE.w / 2 - w / 2, CROWN.top, w, h, alias, 'FAST');
 }
 
 /** The small motif, centred near the foot of the sheet. */
-function drawFooterMotif(doc: jsPDF, orn: Ornament, asset: AssetFn, alias: string): void {
+export function drawFooterMotif(doc: jsPDF, orn: Ornament, asset: AssetFn, alias: string): void {
   const h = FOOTER.h;
   const w = h * orn.aspect;
   doc.addImage(
@@ -468,7 +468,7 @@ function drawCover(
 
 /* ── a wallet page ─────────────────────────────────────────────────────── */
 
-async function drawWalletPage(
+export async function drawWalletPage(
   doc: jsPDF,
   lang: Lang,
   draft: PackageDraft,
